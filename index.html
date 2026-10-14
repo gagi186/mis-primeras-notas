@@ -37,7 +37,7 @@
     height: 64px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 9px;
     padding: 0 16px;
     padding-top: env(safe-area-inset-top);
     background: var(--bar);
@@ -222,7 +222,9 @@
   #toolbar { overflow-x: auto; scrollbar-width: none; }
   #toolbar::-webkit-scrollbar { display: none; }
   #toolbar > * { flex-shrink: 0; }
+  #fullBtn[hidden] { display: none; }
   @media (max-width: 830px) {
+    #play .lbl { display: none; }
     #tempo button { padding: 8px 9px; }
     #tempoLabel { min-width: 54px !important; }
     #toolbar button.icon { padding: 8px 9px; }
@@ -291,11 +293,12 @@
     <span id="tempoLabel" data-tip="Velocidad: negras por minuto">♩ = 90</span>
     <button id="faster" aria-label="Más rápido" data-tip="Más rápido — mantén pulsado para subir de prisa">+</button>
   </div>
-  <button id="play" data-tip="Toca la melodía desde el principio; pulsa otra vez para parar">▶ Tocar</button>
+  <button id="play" data-tip="Toca la melodía desde el principio; pulsa otra vez para parar">▶<span class="lbl"> Tocar</span></button>
   <button id="songsBtn" class="icon" aria-label="Mis canciones" data-tip="Mis canciones: guardar, abrir, exportar e importar">📁</button>
   <button id="undo" class="icon" aria-label="Deshacer" data-tip="Deshacer — también 2 dedos en el pentagrama, o ⌘Z en la Mac">↶</button>
   <button id="redo" class="icon" aria-label="Rehacer" data-tip="Rehacer — también 3 dedos en el pentagrama, o ⇧⌘Z en la Mac">↷</button>
   <button id="clear" class="icon" aria-label="Borrar el pentagrama" data-tip="Borrar el pentagrama para empezar una canción nueva (las guardadas no se borran)">🗑</button>
+  <button id="fullBtn" class="icon" aria-label="Pantalla completa" data-tip="Pantalla completa: oculta la barra del navegador (vuelve a pulsar para salir)" hidden>⛶</button>
 </div>
 <div id="status"></div>
 <svg id="staff" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -368,7 +371,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v28';
+  const APP_VERSION = 'v29';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -1550,6 +1553,10 @@
   svg.addEventListener('pointercancel', e => finish(e, false));
 
   // --- Reproducir la melodía ---
+  // En pantallas estrechas solo se ve el icono (▶ / ■)
+  function setPlayLabel(on) {
+    playBtn.innerHTML = on ? '■<span class="lbl"> Parar</span>' : '▶<span class="lbl"> Tocar</span>';
+  }
   const playBtn = document.getElementById('play');
 
   // Primero vuelve al principio y, cuando termina de regresar, empieza a sonar
@@ -1558,7 +1565,7 @@
     if (!notes().length) return;
     audio();                          // desbloquear el audio dentro del toque
     rewinding = true;
-    playBtn.textContent = '■ Parar';
+    setPlayLabel(true);
     if (view === 'zoom') { scrollTarget = 0; animateScroll(); }
     else page = 0;
     render();
@@ -1593,21 +1600,21 @@
     });
     if (!events.length) return;
     playing = { ctx, events, voices, t0, total: t, current: null };
-    playBtn.textContent = '■ Parar';
+    setPlayLabel(true);
     requestAnimationFrame(playTick);
   }
 
   function stop() {
     if (rewinding) {
       rewinding = false;
-      playBtn.textContent = '▶ Tocar';
+      setPlayLabel(false);
       return;
     }
     if (!playing) return;
     const now = playing.ctx.currentTime;
     playing.voices.forEach(o => { try { o.stop(now); } catch (_) {} });
     playing = null;
-    playBtn.textContent = '▶ Tocar';
+    setPlayLabel(false);
     if (scaleView) {                             // al terminar la escala vuelve la partitura
       scaleView = null;
       showEnd();
@@ -2148,6 +2155,27 @@
     installRow.hidden = true;
   });
   window.addEventListener('appinstalled', () => { installRow.hidden = true; });
+
+  // Pantalla completa (Android y iPad en el navegador; instalada ya lo es)
+  const fullBtn = document.getElementById('fullBtn');
+  const root = document.documentElement;
+  const canFull = !installed && !!(root.requestFullscreen || root.webkitRequestFullscreen);
+  const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  fullBtn.hidden = !canFull;
+  fullBtn.addEventListener('click', async () => {
+    try {
+      if (isFull()) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      else await (root.requestFullscreen || root.webkitRequestFullscreen).call(root);
+    } catch (_) {
+      flash('Este navegador no permite pantalla completa aquí. Instálala en la pantalla de inicio (📁)');
+    }
+  });
+  const onFull = () => {
+    fullBtn.classList.toggle('on', isFull());
+    fullBtn.setAttribute('aria-label', isFull() ? 'Salir de pantalla completa' : 'Pantalla completa');
+  };
+  document.addEventListener('fullscreenchange', onFull);
+  document.addEventListener('webkitfullscreenchange', onFull);
 
   // Aviso de copia de seguridad al abrir la app
   showBackupState();
