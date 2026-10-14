@@ -142,6 +142,31 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* Ejercicios */
+  #practice {
+    position: fixed; inset: 0; z-index: 15;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+  }
+  #practice[hidden] { display: none; }
+  .pHead {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 16px; background: var(--bar); border-bottom: 1px solid #ddd3bd;
+  }
+  #pScore { font-weight: 700; font-size: 17px; }
+  #pMsg { text-align: center; font-size: 26px; font-weight: 800; padding: 18px 16px 0; min-height: 34px; }
+  #pMsg small { display: block; font-size: 16px; font-weight: 600; color: #6b6358; margin-top: 4px; }
+  #pStaff { flex: 1; width: 100%; min-height: 0; touch-action: none; }
+  #pAnswers {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+    padding: 12px 16px calc(24px + env(safe-area-inset-bottom));
+  }
+  #pAnswers button { font-size: 22px; padding: 16px 20px; min-width: 88px; border-radius: 16px; }
+  #pAnswers button.note { color: #fff; border: 0; font-weight: 800; }
+  #pAnswers button.note.dim { opacity: 0.35; }
+  #pAnswers button.big { background: var(--ink); color: #fff; border-color: var(--ink); }
+
   /* Panel de canciones */
   #songs {
     position: fixed;
@@ -223,8 +248,14 @@
   #toolbar::-webkit-scrollbar { display: none; }
   #toolbar > * { flex-shrink: 0; }
   #fullBtn[hidden] { display: none; }
+  @media (max-width: 1250px) {
+    .segLabel, #practiceBtn .lbl { display: none; }
+  }
   @media (max-width: 830px) {
     #play .lbl { display: none; }
+    #toolbar { gap: 5px !important; }
+    #levels button { min-width: 28px !important; padding: 8px 4px !important; }
+    #practiceBtn { padding: 8px 10px; }
     #tempo button { padding: 8px 9px; }
     #tempoLabel { min-width: 54px !important; }
     #toolbar button.icon { padding: 8px 9px; }
@@ -289,6 +320,7 @@
     <button data-view="sheet" data-tip="Hoja: varios pentagramas a la vez (vista del profesor)">📄<span class="lbl"> Hoja</span></button>
     <button data-view="zoom" data-tip="Zoom: un pentagrama grande que se desliza (vista del alumno)">🔍<span class="lbl"> Zoom</span></button>
   </div>
+  <button id="practiceBtn" data-tip="Practicar: leer notas y dictado">🎯<span class="lbl"> Practicar</span></button>
   <div class="spacer"></div>
   <div class="seg" id="tempo">
     <button id="slower" aria-label="Más lento" data-tip="Más lento — mantén pulsado para bajar de prisa">−</button>
@@ -304,6 +336,21 @@
 </div>
 <div id="status"></div>
 <svg id="staff" xmlns="http://www.w3.org/2000/svg"></svg>
+<div id="practice" hidden>
+  <div class="pHead">
+    <div class="seg" id="pTabs">
+      <button data-ex="read" data-tip="Leer notas: di qué nota es">📖 Leer notas</button>
+      <button data-ex="dict" data-tip="Dictado: escucha y escribe la melodía">👂 Dictado</button>
+    </div>
+    <div class="seg" id="pOpts"></div>
+    <div class="spacer"></div>
+    <div id="pScore"></div>
+    <button id="pClose">✕ Salir</button>
+  </div>
+  <div id="pMsg"></div>
+  <svg id="pStaff" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="pAnswers"></div>
+</div>
 <div id="songs" hidden>
   <div class="panel" role="dialog" aria-label="Mis canciones">
     <header>
@@ -376,7 +423,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v30';
+  const APP_VERSION = 'v31';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -801,9 +848,9 @@
   }
 
   // beam: si la nota va unida con barra, { up, pEnd } (dirección y altura del final de la plica)
-  function drawNote(band, x, p, fig, { opacity = 1, active = false, del = false, beam = null, ring = false } = {}) {
+  function drawNote(band, x, p, fig, { opacity = 1, active = false, del = false, beam = null, ring = false, ink = null } = {}) {
     const { gap } = G;
-    const color = COLORS[noteIndex(p)];
+    const color = ink || COLORS[noteIndex(p)];
     const y = yOf(band, p);
     const ng = el(layer, 'g', { opacity: del ? 0.2 : opacity });
     const cx = x + gap * 0.9;
@@ -1796,6 +1843,285 @@
       : `${noteName(notes()[i].p, effAcc(notes()[i]))}: clic para cambiarla, arrástrala a un lado para borrarla`);
   });
   svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') setTip(null); });
+
+  // --- Ejercicios: leer notas y dictado ---
+  const practiceEl = document.getElementById('practice');
+  const pStaff = document.getElementById('pStaff');
+  const pMsg = document.getElementById('pMsg');
+  const pAnswers = document.getElementById('pAnswers');
+  const pScore = document.getElementById('pScore');
+  const pOpts = document.getElementById('pOpts');
+  const RECORDS_KEY = 'pentagrama.records';
+  const ROUND = 10;                              // preguntas por ronda en Leer notas
+  const rand = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+  const EX = {
+    kind: 'read',
+    readRange: 'staff',                          // 'staff' dentro del pentagrama, 'ledger' con líneas adicionales
+    dictLen: 4, dictRange: 'easy',               // notas del dictado; 'easy' Do–Sol, 'wide' Do–Do
+  };
+  let R = null;                                  // estado de Leer notas
+  let D = null;                                  // estado del Dictado
+  let PG = null;                                 // geometría del pentagrama del ejercicio
+  let pTone = null;                              // nota que suena mientras se toca en el dictado
+
+  // Dibuja en el pentagrama del ejercicio reutilizando las funciones de la partitura
+  function withPracticeGeometry(fn) {
+    const savedG = G, savedLayer = layer;
+    G = PG;
+    layer = pStaff;
+    try { fn(); } finally { G = savedG; layer = savedLayer; }
+  }
+
+  function practiceGeometry() {
+    const w = pStaff.clientWidth, h = pStaff.clientHeight;
+    const gap = Math.max(14, Math.min(h / 11, w / 16));
+    const left = Math.max(24, w * 0.05);
+    return { w, h, gap, left, right: w - left, bands: [{ bottomLine: h / 2 + gap * 2 }] };
+  }
+
+  function drawPracticeStaff() {
+    const { w, h, gap, left, right } = PG;
+    pStaff.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    pStaff.innerHTML = '';
+    const band = PG.bands[0];
+    for (let i = 0; i < 5; i++) {
+      const y = yOf(band, i * 2);
+      el(pStaff, 'line', { x1: left, x2: right, y1: y, y2: y, stroke: '#1d1d1f', 'stroke-width': Math.max(1.5, gap * 0.05) });
+    }
+    const k = gap / CLEF.unitsPerGap;
+    el(pStaff, 'path', { d: CLEF.d, fill: '#1d1d1f', transform: `translate(${left + gap * 0.3} ${yOf(band, 2) - CLEF.gLineY * k}) scale(${k})` });
+  }
+
+  function playNotes(ps, beat = 0.6) {
+    const ctx = audio();
+    const t0 = ctx.currentTime + 0.05;
+    ps.forEach((p, i) => scheduleTone(ctx, p, t0 + i * beat, beat * 0.95, i === 0));
+  }
+
+  const records = () => readStore(RECORDS_KEY, {});
+  function saveRecord(key, value) {
+    const r = records();
+    if (!(r[key] >= value)) { r[key] = value; writeStore(RECORDS_KEY, r); return true; }
+    return false;
+  }
+
+  function button(text, cls, onClick, tip) {
+    const b = document.createElement('button');
+    b.textContent = text;
+    if (cls) b.className = cls;
+    if (tip) b.dataset.tip = tip;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function setOptions(list) {
+    pOpts.innerHTML = '';
+    for (const [label, on, act] of list) {
+      const b = button(label, on ? 'on' : '', act);
+      pOpts.appendChild(b);
+    }
+  }
+
+  // ---- 📖 Leer notas ----
+  function startRead() {
+    R = { q: 0, ok: 0, p: null, answered: null, done: false };
+    nextRead();
+  }
+
+  function nextRead() {
+    if (R.q >= ROUND) return finishRead();
+    const [lo, hi] = EX.readRange === 'staff' ? [-1, 9] : [-4, 12];
+    let p;
+    do p = rand(lo, hi); while (p === R.p);
+    R.p = p;
+    R.q++;
+    R.answered = null;
+    renderRead();
+  }
+
+  function answerRead(idx) {
+    if (R.answered || R.done) return;
+    const right = noteIndex(R.p) === idx;
+    R.answered = { right, chosen: idx };
+    if (right) R.ok++;
+    playNotes([R.p], 0.7);
+    renderRead();
+    setTimeout(nextRead, right ? 1100 : 2000);
+  }
+
+  function finishRead() {
+    R.done = true;
+    const key = `read-${EX.readRange}`;
+    const record = saveRecord(key, R.ok);
+    renderRead(record);
+  }
+
+  function renderRead(newRecord = false) {
+    setOptions([
+      ['Dentro del pentagrama', EX.readRange === 'staff', () => { EX.readRange = 'staff'; startRead(); }],
+      ['Con líneas adicionales', EX.readRange === 'ledger', () => { EX.readRange = 'ledger'; startRead(); }],
+    ]);
+    PG = practiceGeometry();
+    drawPracticeStaff();
+    pAnswers.innerHTML = '';
+    if (R.done) {
+      const stars = R.ok >= 9 ? '⭐⭐⭐' : R.ok >= 7 ? '⭐⭐' : R.ok >= 5 ? '⭐' : '';
+      pScore.textContent = '';
+      pMsg.innerHTML = `${stars} ${R.ok} de ${ROUND} ${stars}` +
+        `<small>${newRecord ? '¡Nuevo récord!' : `Récord: ${records()[`read-${EX.readRange}`] || 0} de ${ROUND}`}</small>`;
+      pAnswers.appendChild(button('Otra vez', 'big', startRead));
+      return;
+    }
+    pScore.textContent = `Pregunta ${R.q} de ${ROUND} · Aciertos ${R.ok}`;
+    const a = R.answered;
+    pMsg.innerHTML = !a ? '¿Qué nota es?'
+      : a.right ? `¡Muy bien! Es ${NAMES[noteIndex(R.p)]} 🎉`
+      : `Es ${NAMES[noteIndex(R.p)]}<small>Tocaste ${NAMES[a.chosen]}</small>`;
+    pMsg.style.color = !a ? '' : COLORS[noteIndex(R.p)];
+    // La nota va en negro hasta responder; después, con su color
+    withPracticeGeometry(() => drawNote(PG.bands[0], PG.w * 0.55 - PG.gap * 0.9, R.p, NOTE_FIG,
+      { ink: a ? null : '#1d1d1f', ring: !!a }));
+    NAMES.forEach((n, i) => {
+      const b = button(n, 'note', () => answerRead(i));
+      b.style.background = COLORS[i];
+      if (i === 4) b.style.color = '#3a3000';
+      if (a && i !== a.chosen && i !== noteIndex(R.p)) b.classList.add('dim');
+      pAnswers.appendChild(b);
+    });
+  }
+
+  // ---- 👂 Dictado ----
+  function startDict() {
+    const [lo, hi] = EX.dictRange === 'easy' ? [-2, 2] : [-2, 5];
+    const seq = [-2];                            // empieza siempre en Do
+    while (seq.length < EX.dictLen) {
+      const prev = seq[seq.length - 1];
+      let p;
+      do p = Math.max(lo, Math.min(hi, prev + rand(-2, 2))); while (p === prev && Math.random() < 0.7);
+      seq.push(p);
+    }
+    D = { seq, user: [], checked: false, ok: D?.ok || 0, rounds: D?.rounds || 0 };
+    renderDict();
+    setTimeout(() => playNotes(D.seq), 400);
+  }
+
+  function dictX(i) {
+    const step = Math.min(PG.gap * 3.4, (PG.right - PG.left - PG.gap * 6) / Math.max(1, EX.dictLen - 1));
+    return PG.left + PG.gap * 5 + i * step;
+  }
+
+  function renderDict() {
+    setOptions([
+      ['3 notas', EX.dictLen === 3, () => { EX.dictLen = 3; startDict(); }],
+      ['4 notas', EX.dictLen === 4, () => { EX.dictLen = 4; startDict(); }],
+      ['5 notas', EX.dictLen === 5, () => { EX.dictLen = 5; startDict(); }],
+      ['Do–Sol', EX.dictRange === 'easy', () => { EX.dictRange = 'easy'; startDict(); }],
+      ['Do–Do', EX.dictRange === 'wide', () => { EX.dictRange = 'wide'; startDict(); }],
+    ]);
+    PG = practiceGeometry();
+    drawPracticeStaff();
+    pScore.textContent = `Dictados bien: ${D.ok} de ${D.rounds}`;
+    const n = D.seq.length;
+    const left = n - 1 - D.user.length;
+    if (!D.checked) {
+      pMsg.style.color = '';
+      pMsg.innerHTML = left > 0 ? `Escucha y escribe ${left === 1 ? 'la nota que falta' : `las ${left} notas que faltan`}`
+        + '<small>La primera ya está escrita. Toca el pentagrama para poner cada nota.</small>'
+        : 'Listo: comprueba si está bien';
+    }
+    withPracticeGeometry(() => {
+      const band = PG.bands[0];
+      drawNote(band, dictX(0) - PG.gap * 0.9, D.seq[0], NOTE_FIG);          // la primera, de referencia
+      D.user.forEach((p, i) => {
+        const x = dictX(i + 1) - PG.gap * 0.9;
+        const want = D.seq[i + 1];
+        if (D.checked && p !== want) {
+          drawNote(band, x - PG.gap * 0.8, p, NOTE_FIG, { del: true });       // la tuya, tachada
+          drawNote(band, x + PG.gap * 0.8, want, NOTE_FIG, { ring: true });   // la correcta, al lado
+        } else drawNote(band, x, p, NOTE_FIG, { ring: D.checked });
+      });
+      // huecos que faltan
+      for (let i = D.user.length + 1; i < n; i++)
+        el(pStaff, 'text', { x: dictX(i), y: yOf(band, -5), 'text-anchor': 'middle', 'font-size': PG.gap * 1.2, fill: '#b9ae98' }).textContent = '?';
+    });
+    pAnswers.innerHTML = '';
+    pAnswers.appendChild(button('▶ Escuchar', '', () => playNotes(D.seq)));
+    if (!D.checked) {
+      pAnswers.appendChild(button('↶ Borrar', '', () => { D.user.pop(); renderDict(); }));
+      const check = button('✓ Comprobar', 'big', checkDict);
+      check.disabled = D.user.length < n - 1;
+      pAnswers.appendChild(check);
+    } else pAnswers.appendChild(button('→ Otro dictado', 'big', startDict));
+  }
+
+  function checkDict() {
+    D.checked = true;
+    D.rounds++;
+    const good = D.user.filter((p, i) => p === D.seq[i + 1]).length;
+    const all = good === D.seq.length - 1;
+    if (all) D.ok++;
+    saveRecord(`dict-${EX.dictLen}-${EX.dictRange}`, D.ok);
+    renderDict();
+    pMsg.style.color = all ? '#2e7d32' : '#c62828';
+    pMsg.innerHTML = all ? '¡Perfecto! 🎉' : `${good} de ${D.seq.length - 1} bien`
+      + (all ? '' : '<small>Las tachadas son las tuyas; al lado, con un aro, la correcta. Escúchala otra vez.</small>');
+  }
+
+  // Tocar el pentagrama del dictado: pone la siguiente nota (arrastrar la sube o la baja)
+  function pitchInPractice(clientY) {
+    const r = pStaff.getBoundingClientRect();
+    const p = Math.round((PG.bands[0].bottomLine - (clientY - r.top)) / (PG.gap / 2));
+    return Math.max(P_MIN, Math.min(P_MAX, p));
+  }
+  pStaff.addEventListener('pointerdown', e => {
+    if (EX.kind !== 'dict' || !D || D.checked || D.user.length >= D.seq.length - 1) return;
+    try { pStaff.setPointerCapture(e.pointerId); } catch (_) {}
+    const p = pitchInPractice(e.clientY);
+    D.user.push(p);
+    pTone = startTone(p);
+    renderDict();
+  });
+  pStaff.addEventListener('pointermove', e => {
+    if (!pTone || !D) return;
+    const p = pitchInPractice(e.clientY);
+    if (p !== D.user[D.user.length - 1]) {
+      D.user[D.user.length - 1] = p;
+      setTone(pTone, p);
+      renderDict();
+    }
+  });
+  const endPTone = () => { if (pTone) { stopTone(pTone); pTone = null; } };
+  pStaff.addEventListener('pointerup', endPTone);
+  pStaff.addEventListener('pointercancel', endPTone);
+
+  // ---- abrir / cerrar ----
+  function showExercise(kind) {
+    EX.kind = kind;
+    document.querySelectorAll('#pTabs button').forEach(b => b.classList.toggle('on', b.dataset.ex === kind));
+    if (kind === 'read') startRead(); else startDict();
+  }
+  function openPractice() {
+    stop();
+    closeSongs();
+    practiceEl.hidden = false;
+    window.history.pushState({ panel: 'practice' }, '');
+    showExercise(EX.kind);
+  }
+  function closePractice(fromBack = false) {
+    if (practiceEl.hidden) return;
+    endPTone();
+    practiceEl.hidden = true;
+    if (!fromBack && window.history.state?.panel === 'practice') window.history.back();
+  }
+  document.getElementById('practiceBtn').addEventListener('click', openPractice);
+  document.getElementById('pClose').addEventListener('click', () => closePractice());
+  document.querySelectorAll('#pTabs button').forEach(b => b.addEventListener('click', () => showExercise(b.dataset.ex)));
+  window.addEventListener('popstate', () => closePractice(true));
+  window.addEventListener('resize', () => {
+    if (practiceEl.hidden) return;
+    if (EX.kind === 'read' && R) renderRead(); else if (D) renderDict();
+  });
 
   // --- Mis canciones ---
   const songsEl = document.getElementById('songs');
