@@ -133,14 +133,36 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    min-width: 76px;
+    min-width: 68px;
     padding: 0 6px;
     background: #fff;
+    font: inherit;
+    font-size: 16px;
     font-weight: 700;
+    border: 0;
     border-left: 1px solid var(--line);
     border-right: 1px solid var(--line);
+    border-radius: 0;
     font-variant-numeric: tabular-nums;
+    position: relative;
   }
+  /* Punto: metrónomo o cuenta de entrada activos */
+  #tempoLabel.metro::after {
+    content: ''; position: absolute; top: 5px; right: 5px;
+    width: 7px; height: 7px; border-radius: 50%; background: #1e6fd9;
+  }
+  #tempoPop {
+    position: fixed; top: 70px; z-index: 12;
+    width: min(320px, calc(100vw - 32px));
+    background: #fff; border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+    padding: 12px 16px 14px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  #tempoPop[hidden] { display: none; }
+  #tempoPop label { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; font-weight: 700; font-size: 16px; align-items: center; }
+  #tempoPop input { width: 24px; height: 24px; grid-row: span 2; }
+  #tempoPop small { font-weight: 500; font-size: 13px; color: #6b6358; }
 
   /* Ejercicios */
   #practice {
@@ -333,7 +355,7 @@
   <div class="spacer"></div>
   <div class="seg" id="tempo">
     <button id="slower" aria-label="Más lento" data-tip="Más lento — mantén pulsado para bajar de prisa">−</button>
-    <span id="tempoLabel" data-tip="Velocidad: negras por minuto">♩ = 90</span>
+    <button id="tempoLabel" data-tip="Velocidad (negras por minuto) — toca para el metrónomo y la cuenta de entrada">♩ 90</button>
     <button id="faster" aria-label="Más rápido" data-tip="Más rápido — mantén pulsado para subir de prisa">+</button>
   </div>
   <button id="play" data-tip="Toca la melodía desde el principio; pulsa otra vez para parar">▶<span class="lbl"> Tocar</span></button>
@@ -345,6 +367,11 @@
 </div>
 <div id="status"></div>
 <svg id="staff" xmlns="http://www.w3.org/2000/svg"></svg>
+<div id="tempoPop" hidden>
+  <label><input type="checkbox" id="optCount"> Cuenta de entrada <small>Un compás de clics (1, 2, 3…) antes de empezar a tocar</small></label>
+  <label><input type="checkbox" id="optMetro"> Metrónomo <small>Un clic en cada tiempo mientras suena la melodía</small></label>
+  <button id="metroTest">▶ Probar el metrónomo</button>
+</div>
 <div id="practice" hidden>
   <div class="pHead">
     <div class="seg" id="pTabs"></div>
@@ -429,7 +456,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v34';
+  const APP_VERSION = 'v35';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -1656,12 +1683,22 @@
     });
   }
 
+  let countTimers = [];                          // números de la cuenta de entrada
   function startPlayback(from = 0, list = shown()) {
     const ctx = audio();
     const beat = 60 / LEVELS[level].tempo;
-    const t0 = ctx.currentTime + 0.1;
-    const events = [];
+    const perBar = hasBars(level) ? LEVELS[level].meter : 4;   // tiempos por compás
     const voices = [];
+    // Cuenta de entrada: un compás de clics antes de empezar (no al seguir tras cambiar la velocidad)
+    const count = settings.countIn && from === 0 && !scaleView ? perBar : 0;
+    const start = ctx.currentTime + 0.15;
+    for (let k = 0; k < count; k++) {
+      voices.push(scheduleClick(ctx, start + k * beat, k === 0));
+      countTimers.push(setTimeout(() => { if (playing) setTip(`${k + 1}…`); }, (start - ctx.currentTime + k * beat) * 1000));
+    }
+    if (count) countTimers.push(setTimeout(() => setTip(null), (start - ctx.currentTime + count * beat) * 1000));
+    const t0 = start + count * beat;
+    const events = [];
     let t = 0;
     // Desde el nivel 3: el primer tiempo de cada compás suena más fuerte
     const full = (LEVELS[level].meter || 4) * 4;
@@ -1677,6 +1714,9 @@
       t += dur;
     });
     if (!events.length) return;
+    // Metrónomo: un clic en cada tiempo, más fuerte al empezar cada compás
+    if (settings.metro && !scaleView)
+      for (let k = 0; k * beat < t - 1e-6; k++) voices.push(scheduleClick(ctx, t0 + k * beat, k % perBar === 0));
     playing = { ctx, events, voices, t0, total: t, current: null };
     setPlayLabel(true);
     requestAnimationFrame(playTick);
@@ -1691,6 +1731,7 @@
     if (!playing) return;
     const now = playing.ctx.currentTime;
     playing.voices.forEach(o => { try { o.stop(now); } catch (_) {} });
+    if (countTimers.length) { countTimers.forEach(clearTimeout); countTimers = []; setTip(null); }
     playing = null;
     setPlayLabel(false);
     if (scaleView) {                             // al terminar la escala vuelve la partitura
@@ -1712,9 +1753,46 @@
     requestAnimationFrame(playTick);
   }
 
+  // --- Metrónomo y cuenta de entrada (se recuerdan) ---
+  const SETTINGS_KEY = 'pentagrama.ajustes';
+  const settings = { countIn: false, metro: false, ...readStore(SETTINGS_KEY, {}) };
+  const tempoPop = document.getElementById('tempoPop');
+  const optCount = document.getElementById('optCount');
+  const optMetro = document.getElementById('optMetro');
+  function showSettings() {
+    optCount.checked = settings.countIn;
+    optMetro.checked = settings.metro;
+    document.getElementById('tempoLabel').classList.toggle('metro', settings.countIn || settings.metro);
+  }
+  function saveSettings() {
+    settings.countIn = optCount.checked;
+    settings.metro = optMetro.checked;
+    writeStore(SETTINGS_KEY, settings);
+    showSettings();
+  }
+  optCount.addEventListener('change', saveSettings);
+  optMetro.addEventListener('change', saveSettings);
+  document.getElementById('tempoLabel').addEventListener('click', () => {
+    if (!tempoPop.hidden) { tempoPop.hidden = true; return; }
+    const r = document.getElementById('tempo').getBoundingClientRect();
+    tempoPop.hidden = false;
+    tempoPop.style.left = Math.max(16, Math.min(r.left, innerWidth - tempoPop.offsetWidth - 16)) + 'px';
+  });
+  // Tocar fuera cierra el panel
+  document.addEventListener('pointerdown', e => {
+    if (!tempoPop.hidden && !tempoPop.contains(e.target) && e.target.id !== 'tempoLabel') tempoPop.hidden = true;
+  }, true);
+  document.getElementById('metroTest').addEventListener('click', () => {
+    const ctx = audio();
+    const beat = 60 / LEVELS[level].tempo;
+    const perBar = hasBars(level) ? LEVELS[level].meter : 4;
+    for (let k = 0; k < perBar * 2; k++) scheduleClick(ctx, ctx.currentTime + 0.1 + k * beat, k % perBar === 0);
+  });
+  showSettings();
+
   // --- Velocidad ---
   const tempoLabel = document.getElementById('tempoLabel');
-  const showTempo = () => { tempoLabel.textContent = `♩ = ${LEVELS[level].tempo}`; };
+  const showTempo = () => { tempoLabel.textContent = `♩ ${LEVELS[level].tempo}`; };
 
   function setTempo(v) {
     const t = validTempo(v);
@@ -2201,16 +2279,17 @@
     }
     if (clicks) for (let k = 0; k < Math.round(pos); k++) scheduleClick(ctx, t0 + k * beat);
   }
-  function scheduleClick(ctx, when) {
+  function scheduleClick(ctx, when, accent = false) {
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = 'square';
-    o.frequency.value = 1600;
+    o.frequency.value = accent ? 2200 : 1600;
     g.gain.setValueAtTime(0, when);
-    g.gain.linearRampToValueAtTime(0.06, when + 0.003);
+    g.gain.linearRampToValueAtTime(accent ? 0.1 : 0.06, when + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
     o.connect(g).connect(ctx.destination);
     o.start(when);
     o.stop(when + 0.06);
+    return o;
   }
 
   // Ritmo con silencios: empieza con nota, tiene al menos un silencio y dos notas
