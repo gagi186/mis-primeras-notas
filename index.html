@@ -190,6 +190,16 @@
   .fileRow { display: flex; gap: 10px; padding: 12px 20px 0; }
   .fileRow button { flex: 1; font-size: 15px; }
   #saveMsg.error { color: #c62828; }
+  #backupInfo { padding: 8px 20px 0; font-size: 13px; color: #6b6358; }
+  #backupInfo.late { color: #b45309; font-weight: 600; }
+  #installRow { display: flex; align-items: center; gap: 10px; padding: 10px 20px 0; font-size: 13px; color: #6b6358; }
+  #installRow[hidden], #installBtn[hidden] { display: none; }
+  /* Punto de aviso en 📁 cuando conviene hacer copia de seguridad */
+  #songsBtn { position: relative; }
+  #songsBtn.remind::after {
+    content: ''; position: absolute; top: 4px; right: 4px;
+    width: 10px; height: 10px; border-radius: 50%; background: #e53935; border: 2px solid #fff;
+  }
   #saveMsg { padding: 0 20px; font-size: 14px; font-weight: 600; color: #2e7d32; min-height: 0; }
   #saveMsg:not(:empty) { padding-top: 10px; }
   #songList { touch-action: pan-y; list-style: none; margin: 0; padding: 8px 12px 16px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -208,6 +218,16 @@
   #songList button { padding: 8px 14px; font-size: 15px; }
   #songList button.danger { color: #c62828; }
 
+  /* Si aun así no cabe, la barra se puede deslizar de lado */
+  #toolbar { overflow-x: auto; scrollbar-width: none; }
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar > * { flex-shrink: 0; }
+  @media (max-width: 830px) {
+    #tempo button { padding: 8px 9px; }
+    #tempoLabel { min-width: 54px !important; }
+    #toolbar button.icon { padding: 8px 9px; }
+    .chip { padding: 4px 6px !important; }
+  }
   @media (max-width: 900px) {
     #toolbar { gap: 6px; padding: 0 8px; }
     #toolbar .seg button { padding: 8px 9px; }
@@ -290,9 +310,14 @@
       <button id="saveSong" class="primary">Guardar</button>
     </div>
     <div class="fileRow">
-      <button id="exportAll">⬆︎ Exportar todas</button>
-      <button id="importBtn">⬇︎ Importar archivo</button>
+      <button id="backupBtn" data-tip="Guarda todas tus canciones y lo que hay en cada nivel en un archivo (por ejemplo en iCloud Drive o Google Drive)">💾 Copia de seguridad</button>
+      <button id="importBtn" data-tip="Abre una canción o una copia de seguridad">⬇︎ Importar / Recuperar</button>
       <input id="importFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div id="backupInfo"></div>
+    <div id="installRow" hidden>
+      <button id="installBtn">📲 Instalar la app</button>
+      <span id="installHint"></span>
     </div>
     <div id="saveMsg"></div>
     <ul id="songList"></ul>
@@ -343,7 +368,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v27';
+  const APP_VERSION = 'v28';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -1416,9 +1441,12 @@
   const doRedo = () => flash(redo() ? '↷ Rehecho' : 'No hay nada que rehacer');
 
   // Mac: tocar el trackpad con dos dedos es un clic derecho → deshacer
+  // (En Android, mantener el dedo también lanza este evento: ahí no se deshace nada)
+  let lastPointer = 'mouse';
+  svg.addEventListener('pointerdown', e => { lastPointer = e.pointerType; }, true);
   svg.addEventListener('contextmenu', e => {
     e.preventDefault();
-    if (!press) doUndo();
+    if (!press && lastPointer === 'mouse') doUndo();
   });
 
   // Teclado: ⌘Z / Ctrl+Z deshacer, ⇧⌘Z / Ctrl+Y rehacer
@@ -1744,9 +1772,16 @@
     songNameEl.value = LEVELS[level].name || '';
     message('');
     listSongs();
+    showBackupState();
     songsEl.hidden = false;
+    window.history.pushState({ panel: 'songs' }, '');   // el botón "atrás" de Android lo cierra
   }
-  function closeSongs() { songsEl.hidden = true; }
+  function closeSongs(fromBack = false) {
+    if (songsEl.hidden) return;
+    songsEl.hidden = true;
+    if (!fromBack && window.history.state?.panel === 'songs') window.history.back();
+  }
+  window.addEventListener('popstate', () => closeSongs(true));
 
   function listSongs() {
     const songs = readSongs().sort((a, b) => b.updated - a.updated);
@@ -1808,6 +1843,7 @@
     message(existing ? `"${name}" actualizada ✓` : `"${name}" guardada ✓`);
     songNameEl.blur();
     listSongs();
+    showBackupState();
   }
 
   function openSong(song) {
@@ -1831,31 +1867,26 @@
   // --- Exportar e importar (archivo .json para pasar entre tablets) ---
   const FILE_APP = 'pentagrama';
 
-  async function exportSongs(songs, title) {
-    if (!songs.length) { message('No hay canciones que exportar', true); return; }
-    const data = {
-      app: FILE_APP, version: 1,
-      songs: songs.map(({ name, level, tempo, meter, key, notes }) => ({
-        name, level, tempo: validTempo(tempo), notes,
-        ...(hasBars(level) ? { meter: validMeter(meter) } : {}),
-        ...(hasKeys(level) ? { key: validKey(key) } : {}),
-      })),
-    };
-    const safe = title.replace(/[\\/:*?"<>|]+/g, '').trim() || 'canciones';
-    const fileName = `${safe}.pentagrama.json`;
-    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+  const songForFile = ({ name, level, tempo, meter, key, notes }) => ({
+    name, level, tempo: validTempo(tempo), notes,
+    ...(hasBars(level) ? { meter: validMeter(meter) } : {}),
+    ...(hasKeys(level) ? { key: validKey(key) } : {}),
+  });
 
-    // Con HTTPS el iPad ofrece compartir directo (AirDrop, Mensajes…)
+  // Entrega un archivo: con HTTPS, el menú de compartir del iPad/Android
+  // (Guardar en Archivos, iCloud Drive, Google Drive, AirDrop…); si no, se descarga.
+  // Devuelve 'shared', 'downloaded' o 'cancelled'.
+  async function deliverFile(data, fileName, title) {
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
     const file = new File([blob], fileName, { type: 'application/json' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({ files: [file], title });
-        return;
+        return 'shared';
       } catch (e) {
-        if (e.name === 'AbortError') return;          // el usuario canceló
+        if (e.name === 'AbortError') return 'cancelled';
       }
     }
-    // Si no, se descarga el archivo (queda en Archivos › Descargas)
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1864,7 +1895,80 @@
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    message(`Exportado: ${fileName}`);
+    return 'downloaded';
+  }
+
+  async function exportSongs(songs, title) {
+    if (!songs.length) { message('No hay canciones que exportar', true); return; }
+    const safe = title.replace(/[\\/:*?"<>|]+/g, '').trim() || 'canciones';
+    const fileName = `${safe}.pentagrama.json`;
+    const how = await deliverFile({ app: FILE_APP, version: 1, songs: songs.map(songForFile) }, fileName, title);
+    if (how === 'downloaded') message(`Exportado: ${fileName}`);
+  }
+
+  // --- Copia de seguridad: todas las canciones y lo que hay en cada nivel ---
+  const BACKUP_KEY = 'pentagrama.ultimaCopia';
+  const DAY = 24 * 60 * 60 * 1000;
+  const lastBackup = () => readStore(BACKUP_KEY, 0);
+
+  // Conviene hacer copia si hay canciones guardadas después de la última copia
+  // y esa copia tiene más de una semana (o nunca se hizo)
+  function needsBackup() {
+    const songs = readSongs();
+    if (!songs.length) return false;
+    const newest = Math.max(...songs.map(s => s.updated || 0));
+    return newest > lastBackup() && Date.now() - lastBackup() > 7 * DAY;
+  }
+
+  function showBackupState() {
+    const last = lastBackup();
+    const el = document.getElementById('backupInfo');
+    const days = Math.floor((Date.now() - last) / DAY);
+    el.textContent = !last ? 'Todavía no has hecho ninguna copia de seguridad.'
+      : `Última copia: ${days === 0 ? 'hoy' : days === 1 ? 'ayer' : `hace ${days} días`}.`;
+    el.classList.toggle('late', needsBackup());
+    document.getElementById('songsBtn').classList.toggle('remind', needsBackup());
+  }
+
+  async function backupAll() {
+    const songs = readSongs();
+    const current = readStore(CURRENT_KEY, null);
+    if (!songs.length && !LEVEL_IDS.some(n => LEVELS[n].notes.length)) {
+      message('Todavía no hay nada que guardar', true);
+      return;
+    }
+    saveCurrent();
+    const today = new Date().toISOString().slice(0, 10);
+    const data = {
+      app: FILE_APP, version: 1, kind: 'backup', date: today,
+      songs: songs.map(songForFile),
+      current: readStore(CURRENT_KEY, current),
+    };
+    const how = await deliverFile(data, `Mis primeras notas - copia ${today}.json`, 'Copia de seguridad');
+    if (how === 'cancelled') return;
+    writeStore(BACKUP_KEY, Date.now());
+    message(how === 'shared' ? 'Copia de seguridad hecha ✓'
+      : 'Copia de seguridad descargada ✓ (guárdala en iCloud Drive o Google Drive)');
+    showBackupState();
+  }
+
+  // Al recuperar una copia: volver a poner lo que había en el pentagrama de cada nivel
+  function restoreCurrent(current) {
+    for (const n of LEVEL_IDS) {
+      const c = current?.[n];
+      if (!c) continue;
+      const L = LEVELS[n];
+      L.notes.length = 0;
+      L.notes.push(...unpack(Array.isArray(c.notes) ? c.notes.filter(x => x && (x.r || Number.isInteger(x.p))) : []));
+      L.history.length = 0;
+      L.redo.length = 0;
+      L.name = typeof c.name === 'string' ? c.name.slice(0, 60) : '';
+      if (c.tempo) L.tempo = validTempo(c.tempo);
+      if (hasBars(n) && c.meter) L.meter = validMeter(c.meter);
+      if (hasKeys(n) && c.key !== undefined) L.key = validKey(c.key);
+    }
+    saveCurrent();
+    relayout();
   }
 
   // Valida una canción leída de un archivo
@@ -1889,7 +1993,13 @@
     catch (_) { message('Ese archivo no es una canción válida', true); return; }
     const incoming = (data?.app === FILE_APP && Array.isArray(data.songs) ? data.songs : [])
       .map(cleanSong).filter(Boolean);
-    if (!incoming.length) { message('Ese archivo no contiene canciones', true); return; }
+    const isBackup = data?.app === FILE_APP && data.kind === 'backup';
+    if (!incoming.length && !isBackup) { message('Ese archivo no contiene canciones', true); return; }
+    // Copia de seguridad: ¿recuperar también lo que había en el pentagrama?
+    if (isBackup && data.current && confirm(
+      `Copia de seguridad del ${data.date || ''}.\n\n¿Recuperar también lo que había escrito en el pentagrama de cada nivel? ` +
+      'Se reemplaza lo que tienes ahora en el pentagrama (tus canciones guardadas no se borran).'))
+      restoreCurrent(data.current);
 
     const songs = readSongs();
     let added = 0, same = 0;
@@ -1912,8 +2022,10 @@
     const parts = [];
     if (added) parts.push(added === 1 ? '1 canción importada ✓' : `${added} canciones importadas ✓`);
     if (same) parts.push(same === 1 ? '1 ya estaba' : `${same} ya estaban`);
+    if (isBackup) parts.unshift('Copia recuperada ✓');
     message(parts.join(' · '));
     listSongs();
+    showBackupState();
   }
 
   const importInput = document.getElementById('importFile');
@@ -1923,11 +2035,10 @@
     importInput.value = '';
     if (file) importFile(file);
   });
-  document.getElementById('exportAll').addEventListener('click', () =>
-    exportSongs(readSongs(), 'Mis canciones'));
+  document.getElementById('backupBtn').addEventListener('click', backupAll);
 
   document.getElementById('songsBtn').addEventListener('click', openSongs);
-  document.getElementById('closeSongs').addEventListener('click', closeSongs);
+  document.getElementById('closeSongs').addEventListener('click', () => closeSongs());
   document.getElementById('saveSong').addEventListener('click', saveSong);
   songNameEl.addEventListener('keydown', e => { if (e.key === 'Enter') saveSong(); });
   songsEl.addEventListener('pointerdown', e => { if (e.target === songsEl) closeSongs(); });
@@ -2009,6 +2120,42 @@
   scrollX = scrollTarget = 0;
   render();
   window.addEventListener('resize', relayout);
+
+  // Instalar en la pantalla de inicio: Android/Chrome ofrece su propio aviso;
+  // en iPad hay que hacerlo desde Compartir
+  const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const installRow = document.getElementById('installRow');
+  const installBtn = document.getElementById('installBtn');
+  const installHint = document.getElementById('installHint');
+  let installPrompt = null;
+  if (!installed && /iPad|iPhone|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document) {
+    installRow.hidden = false;
+    installBtn.hidden = true;
+    installHint.textContent = 'Para instalarla: Compartir → Agregar a pantalla de inicio.';
+  }
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    installPrompt = e;
+    installRow.hidden = false;
+    installBtn.hidden = false;
+    installHint.textContent = 'Funciona sin conexión y se abre a pantalla completa.';
+  });
+  installBtn.addEventListener('click', async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    await installPrompt.userChoice;
+    installPrompt = null;
+    installRow.hidden = true;
+  });
+  window.addEventListener('appinstalled', () => { installRow.hidden = true; });
+
+  // Aviso de copia de seguridad al abrir la app
+  showBackupState();
+  if (needsBackup()) setTimeout(() => {
+    clearTimeout(tipTimer);
+    setTip('💾 Hace tiempo que no haces copia de seguridad de tus canciones (en 📁)');
+    tipTimer = setTimeout(() => setTip(null), 6000);
+  }, 1200);
 
   // Funcionar sin conexión (solo en HTTPS o en localhost)
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
