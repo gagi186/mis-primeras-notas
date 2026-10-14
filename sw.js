@@ -1,7 +1,7 @@
 // Service worker: guarda la app para que funcione sin conexión.
 // La página se pide primero a la red (así siempre llega la última versión)
 // y, si no hay conexión, se usa la copia guardada.
-const CACHE = 'pentagrama-v1';
+const CACHE = 'pentagrama-v2';
 const FILES = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const FILES = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
+  ...['A3', 'C4', 'Ds4', 'Fs4', 'A4', 'C5', 'Ds5', 'Fs5', 'A5', 'C6'].map(n => `./audio/piano/${n}.mp3`),
 ];
 
 self.addEventListener('install', event => {

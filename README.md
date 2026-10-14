@@ -15,4 +15,9 @@ usa 📁 → *💾 Copia de seguridad* y guarda el archivo en iCloud Drive o Goo
 Para recuperarlas en otro dispositivo: 📁 → *⬇︎ Importar / Recuperar*.
 
 Es un solo archivo (`index.html`), sin dependencias ni compilación.
-La clave de sol es un trazado de dominio público de Wikimedia Commons (File:GClef.svg).
+## Créditos
+
+- Clave de sol: trazado de dominio público de Wikimedia Commons (File:GClef.svg).
+- Sonido de piano: **Salamander Grand Piano** de Alexander Holm, licencia
+  [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), en la versión
+  mp3 publicada por Tone.js (`audio/piano/`).

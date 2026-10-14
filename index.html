@@ -456,7 +456,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v35';
+  const APP_VERSION = 'v36';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -1027,6 +1027,21 @@
       drawAccidental(band, hx + G.gap * 0.9 - G.gap * 1.3, n.p, n.sign, opts.del ? 0.2 : opts.opacity);
   }
 
+  // Doble barra final: una fina y otra gruesa al acabar la canción
+  function drawFinalBar(band, x) {
+    const g = G.gap, top = yOf(band, 8), bottom = yOf(band, 0);
+    el(layer, 'line', { x1: x, x2: x, y1: top, y2: bottom, stroke: '#1d1d1f', 'stroke-width': Math.max(2, g * 0.07) });
+    el(layer, 'rect', { x: x + g * 0.3, y: top, width: g * 0.32, height: bottom - top, fill: '#1d1d1f' });
+  }
+  // Dónde va la doble barra: después del último trozo dibujado
+  function drawEnd(pos, where) {
+    const last = pos.length && pos[pos.length - 1];
+    if (!last) return;
+    const seg = last.segs[last.segs.length - 1];
+    const at = where(seg);
+    if (at) drawFinalBar(at.band, (seg.bar ?? seg.x + seg.w - G.gap * 0.2) + at.dx);
+  }
+
   // Barra de compás
   function drawBar(band, x) {
     el(layer, 'line', {
@@ -1163,7 +1178,6 @@
       transform: `translate(${left + gap * 0.3} ${yOf(band, 2) - CLEF.gLineY * k}) scale(${k})`,
     });
     if (hasKeys(level)) drawKeySig(band);
-    if (hasBars(level)) drawMeter(band);
   }
 
   // Armadura: cada ♯ o ♭ del color de su nota, entre la clave y el compás
@@ -1248,6 +1262,8 @@
         drawFlowed(n, pos[i], where, { opacity: n.ghost ? 0.55 : 1, active, del: n.del, ring });
       });
       drawBeams(groups, where);
+      drawEnd(pos, where);
+      if (hasBars(level)) drawMeter(G.bands[0]);
 
       pager.hidden = maxScroll <= 0;
       pageLabel.textContent = '';
@@ -1268,6 +1284,9 @@
         drawFlowed(n, pos[i], where, { opacity: n.ghost ? 0.55 : 1, active, del: n.del, ring });
       });
       drawBeams(groups, where);
+      drawEnd(pos, where);
+      // El compás se escribe solo al principio de la partitura (primera línea)
+      if (hasBars(level) && page === 0) drawMeter(G.bands[0]);
 
       pager.hidden = lastPage === 0;
       pageLabel.textContent = `${page + 1} / ${lastPage + 1}`;
@@ -1345,10 +1364,48 @@
   // --- Sonido ---
   let actx;
   function audio() {
-    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!actx) {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      decodePiano(actx);
+    }
     if (actx.state !== 'running') actx.resume();
     return actx;
   }
+
+  // --- Piano grabado (Salamander Grand Piano, Alexander Holm, CC BY 3.0) ---
+  // Una grabación cada tres semitonos; las notas intermedias se afinan desde la más cercana.
+  // Mientras no han cargado, suena el tono sintético de siempre.
+  const PIANO_FILES = { 57: 'A3', 60: 'C4', 63: 'Ds4', 66: 'Fs4', 69: 'A4', 72: 'C5', 75: 'Ds5', 78: 'Fs5', 81: 'A5', 84: 'C6' };
+  const pianoRaw = {};                           // midi → datos descargados
+  const pianoBuf = {};                           // midi → sonido listo para tocar
+  for (const [midi, name] of Object.entries(PIANO_FILES))
+    fetch(`audio/piano/${name}.mp3`).then(r => r.ok ? r.arrayBuffer() : null)
+      .then(data => { if (data) { pianoRaw[midi] = data; if (actx) decodePiano(actx); } })
+      .catch(() => {});
+  function decodePiano(ctx) {
+    for (const midi of Object.keys(pianoRaw)) {
+      const data = pianoRaw[midi];
+      delete pianoRaw[midi];
+      ctx.decodeAudioData(data, buf => { pianoBuf[midi] = buf; }, () => {});
+    }
+  }
+  const pianoReady = () => Object.keys(pianoBuf).length === Object.keys(PIANO_FILES).length;
+
+  // Golpe de piano: devuelve la fuente y su volumen (para poder apagarlo)
+  function pianoStrike(ctx, midi, when, vol) {
+    let base = null;
+    for (const m of Object.keys(pianoBuf).map(Number))
+      if (base === null || Math.abs(m - midi) < Math.abs(base - midi)) base = m;
+    const src = ctx.createBufferSource();
+    src.buffer = pianoBuf[base];
+    src.playbackRate.value = Math.pow(2, (midi - base) / 12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, when);
+    src.connect(g).connect(ctx.destination);
+    src.start(when);
+    return { src, g };
+  }
+  const midiOf = (p, acc = 0) => Math.round(69 + 12 * Math.log2(freqOf(p, acc) / 440));
   // En iOS el audio se desbloquea con un gesto del usuario
   document.addEventListener('touchend', audio);
 
@@ -1377,6 +1434,7 @@
   function startTone(p, acc = 0) {
     const ctx = audio();
     const now = ctx.currentTime;
+    if (pianoReady()) return { ctx, piano: [pianoStrike(ctx, midiOf(p, acc), now, 0.9)] };
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, now);
     gain.gain.linearRampToValueAtTime(0.35, now + 0.01);
@@ -1389,12 +1447,21 @@
 
   function setTone(tone, p, acc = 0) {
     const now = tone.ctx.currentTime;
+    if (tone.piano) {                            // piano: apagar la anterior y tocar la nueva
+      for (const { src, g } of tone.piano) { g.gain.setTargetAtTime(0, now, 0.04); src.stop(now + 0.3); }
+      tone.piano = [pianoStrike(tone.ctx, midiOf(p, acc), now, 0.8)];
+      return;
+    }
     const f = freqOf(p, acc);
     tone.oscs.forEach(({ o, mult }) => o.frequency.setTargetAtTime(f * mult, now, 0.01));
   }
 
   function stopTone(tone) {
     const now = tone.ctx.currentTime;
+    if (tone.piano) {
+      for (const { src, g } of tone.piano) { g.gain.setTargetAtTime(0, now, 0.12); src.stop(now + 1); }
+      return;
+    }
     tone.gain.gain.cancelScheduledValues(now);
     tone.gain.gain.setValueAtTime(tone.gain.gain.value, now);
     tone.gain.gain.setTargetAtTime(0, now, 0.08);
@@ -1403,6 +1470,12 @@
 
   // Nota programada en el tiempo (para reproducir la melodía)
   function scheduleTone(ctx, p, when, dur, accent = false, acc = 0) {
+    if (pianoReady()) {
+      const { src, g } = pianoStrike(ctx, midiOf(p, acc), when, accent ? 1 : 0.75);
+      g.gain.setTargetAtTime(0, when + dur * 0.95, 0.1);   // se apaga al acabar su duración
+      src.stop(when + dur + 1);
+      return [src];
+    }
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, when);
     gain.gain.linearRampToValueAtTime(accent ? 0.5 : 0.35, when + 0.01);
@@ -1442,6 +1515,7 @@
   // ¿El dedo está sobre la indicación de compás? (niveles 3 y 4)
   function onMeter(b, clientX, clientY) {
     if (!hasBars(level)) return false;
+    if (view === 'sheet' && (b !== 0 || page !== 0)) return false;   // solo en la primera línea
     const y = clientY - TOOLBAR, band = G.bands[b];
     return clientX >= G.tsX - G.gap * 0.3 && clientX <= G.headerRight + G.gap * 0.3 &&
       y >= yOf(band, 9) && y <= yOf(band, -1);
