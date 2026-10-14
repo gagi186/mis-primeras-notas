@@ -253,7 +253,9 @@
     gap: 10px;
   }
   #tools { flex-wrap: wrap; align-items: flex-end; max-width: calc(100vw - 32px); }
-  #tools[hidden], #accs[hidden], #dots[hidden], #sixs[hidden], #keyTools[hidden], #accKey[hidden] { display: none; }
+  #tools[hidden], #modes[hidden], #accs[hidden], #dots[hidden], #sixs[hidden], #keyTools[hidden], #accKey[hidden] { display: none; }
+  #inserts { background: #fff; }
+  #inserts button { font-size: 17px; padding: 10px 16px; }
   #modes, #accs, #dots, #sixs, #keyTools { background: #fff; }
   #sixs button { font-size: 17px; padding: 10px 16px; }
   #keyTools button { font-size: 17px; padding: 10px 16px; }
@@ -297,7 +299,7 @@
   <button id="songsBtn" class="icon" aria-label="Mis canciones" data-tip="Mis canciones: guardar, abrir, exportar e importar">📁</button>
   <button id="undo" class="icon" aria-label="Deshacer" data-tip="Deshacer — también 2 dedos en el pentagrama, o ⌘Z en la Mac">↶</button>
   <button id="redo" class="icon" aria-label="Rehacer" data-tip="Rehacer — también 3 dedos en el pentagrama, o ⇧⌘Z en la Mac">↷</button>
-  <button id="clear" class="icon" aria-label="Borrar el pentagrama" data-tip="Borrar el pentagrama para empezar una canción nueva (las guardadas no se borran)">🗑</button>
+  <button id="clear" class="icon" aria-label="Borrar el pentagrama" data-tip="Borrar el pentagrama para empezar una canción nueva (pide confirmación; ↶ lo recupera)">🗑</button>
   <button id="fullBtn" class="icon" aria-label="Pantalla completa" data-tip="Pantalla completa: oculta la barra del navegador (vuelve a pulsar para salir)" hidden>⛶</button>
 </div>
 <div id="status"></div>
@@ -327,6 +329,9 @@
   </div>
 </div>
 <div id="tools" hidden>
+<div class="seg" id="inserts">
+  <button id="insertBtn" data-tip="Insertar: toca una nota y la nueva se pone justo antes de ella">➕ Insertar</button>
+</div>
 <div class="seg" id="modes">
   <button data-mode="note" data-tip="Nota: tocar el pentagrama pone notas">♩ Nota</button>
   <button data-mode="rest" data-tip="Silencio: tocar el pentagrama pone silencios (mantén el dedo para silencios más largos)">
@@ -371,7 +376,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v29';
+  const APP_VERSION = 'v30';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -545,13 +550,23 @@
 
   // Selectores de abajo a la izquierda según el nivel
   function showTools() {
-    toolsEl.hidden = !hasRests(level);
+    toolsEl.hidden = false;                       // ➕ Insertar está en todos los niveles
+    modesEl.hidden = !hasRests(level);
     dotsEl.hidden = !hasDots(level);
     sixsEl.hidden = !hasSix(level);
     document.getElementById('accKey').hidden = !hasKeys(level);
     document.getElementById('keyTools').hidden = !hasKeys(level);
     accsEl.hidden = !hasAccs(level);
   }
+
+  // Insertar: tocar una nota pone la nueva justo antes de ella
+  let insertOn = false;
+  const insertBtn = document.getElementById('insertBtn');
+  function setInsert(on) {
+    insertOn = on;
+    insertBtn.classList.toggle('on', on);
+  }
+  insertBtn.addEventListener('click', () => setInsert(!insertOn));
 
   // Nivel 8: semicorchea activada o no
   let sixOn = false;
@@ -1094,6 +1109,9 @@
       if (press.edit === null) {
         items.push(ghost);
         focus = items.length - 1;
+      } else if (press.insert) {
+        items.splice(press.edit, 0, ghost);        // las de después se recorren
+        focus = press.edit;
       } else {
         focus = press.edit;
         items[focus] = press.del ? { ...items[focus], del: true } : ghost;
@@ -1186,7 +1204,10 @@
         statusEl.textContent = 'Suelta para borrar';
         statusEl.style.color = '#c62828';
       } else {
-        statusEl.textContent = press.edit !== null ? `Cambiar a ${name}` : name;
+        const before = press.insert ? notes()[press.edit] : null;
+        statusEl.textContent = press.insert
+          ? `Insertar ${name} antes de ${before.rest ? 'el silencio' : noteName(before.p, effAcc(before))}`
+          : press.edit !== null ? `Cambiar a ${name}` : name;
         statusEl.style.color = press.rest ? REST_INK : COLORS[noteIndex(press.p)];
       }
     } else if (playing && playing.current) {
@@ -1480,13 +1501,14 @@
       id: e.pointerId, b, p, t0: performance.now(), tone: rest ? null : startTone(p, soundAcc(p, acc)), rest, acc,
       edit: noteAt(b, e.clientX), x0: e.clientX, del: false,
     };
+    press.insert = insertOn && press.edit !== null;   // poner antes de esa nota, sin cambiarla
     requestAnimationFrame(tick);
   });
 
   svg.addEventListener('pointermove', e => {
     if (!press || e.pointerId !== press.id) return;
-    // Sobre una nota existente, deslizar hacia un lado = borrar
-    if (press.edit !== null) {
+    // Sobre una nota existente, deslizar hacia un lado = borrar (no al insertar)
+    if (press.edit !== null && !press.insert) {
       const del = Math.abs(e.clientX - press.x0) > G.gap * 2.5;
       if (del && !press.del && press.tone) { stopTone(press.tone); press.tone = null; }
       if (!del && press.del && !press.rest) press.tone = startTone(press.p, soundAcc(press.p, press.acc));
@@ -1514,6 +1536,9 @@
       if (edit === null) {
         list.push(item);
         record({ type: 'add' });
+      } else if (press.insert) {
+        list.splice(edit, 0, item);
+        record({ type: 'ins', i: edit, note: item });
       } else {
         record({ type: 'set', i: edit, old: list[edit] });
         list[edit] = item;
@@ -1680,6 +1705,8 @@
     if (h.type === 'add') h.note = list.pop();
     if (h.type === 'set') { h.now = list[h.i]; list[h.i] = h.old; }
     if (h.type === 'del') list.splice(h.i, 0, h.old);
+    if (h.type === 'ins') list.splice(h.i, 1);
+    if (h.type === 'clear') { list.push(...h.old); LEVELS[level].name = h.name; }
     redoStack().push(h);
     saveCurrent();
     render();
@@ -1694,6 +1721,8 @@
     if (h.type === 'add') list.push(h.note);
     if (h.type === 'set') list[h.i] = h.now;
     if (h.type === 'del') list.splice(h.i, 1);
+    if (h.type === 'ins') list.splice(h.i, 0, h.note);
+    if (h.type === 'clear') { list.length = 0; LEVELS[level].name = ''; }
     history().push(h);
     saveCurrent();
     render();
@@ -1701,15 +1730,19 @@
   }
   document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('redo').addEventListener('click', redo);
+  // Borrar todo pide confirmación y se puede deshacer con ↶
   document.getElementById('clear').addEventListener('click', () => {
+    const list = notes();
+    if (!list.length) return;
     stop();
-    notes().length = 0;
-    history().length = 0;
-    redoStack().length = 0;
+    if (!confirm('¿Borrar todo el pentagrama de este nivel?\n\nSi te equivocas, ↶ Deshacer lo recupera. Tus canciones guardadas no se borran.')) return;
+    record({ type: 'clear', old: list.slice(), name: LEVELS[level].name });
+    list.length = 0;
     LEVELS[level].name = '';          // empieza una canción nueva
     page = 0;
     saveCurrent();
     render();
+    flash('Pentagrama borrado — ↶ para recuperarlo');
   });
 
   // --- Barra de estado: qué hace cada control ---
@@ -1752,6 +1785,8 @@
     if (onMeter(b, e.clientX, e.clientY))
       return setTip(`Compás de ${LEVELS[level].meter}/4 — clic para cambiarlo (2/4, 3/4, 4/4)`);
     const i = noteAt(b, e.clientX);
+    if (i !== null && insertOn)
+      return setTip(`Clic para insertar una nota antes de ${notes()[i].rest ? 'este silencio' : noteName(notes()[i].p, effAcc(notes()[i]))}`);
     if (i !== null && notes()[i].rest)
       return setTip('Silencio: clic para cambiarlo, arrástralo a un lado para borrarlo');
     if (i === null && hasRests(level) && mode === 'rest')
@@ -2117,6 +2152,7 @@
   level = 1;
   levelBtns.forEach(b => b.classList.toggle('on', +b.dataset.level === 1));
   setMode('note');
+  setInsert(false);
   setAcc(0);
   setDot(false);
   setSix(false);
