@@ -155,6 +155,7 @@
     padding: 10px 16px; background: var(--bar); border-bottom: 1px solid #ddd3bd;
   }
   #pScore { font-weight: 700; font-size: 17px; }
+  #pTabs { flex-wrap: wrap; }
   #pMsg { text-align: center; font-size: 26px; font-weight: 800; padding: 18px 16px 0; min-height: 34px; }
   #pMsg small { display: block; font-size: 16px; font-weight: 600; color: #6b6358; margin-top: 4px; }
   #pStaff { flex: 1; width: 100%; min-height: 0; touch-action: none; }
@@ -166,6 +167,12 @@
   #pAnswers button.note { color: #fff; border: 0; font-weight: 800; }
   #pAnswers button.note.dim { opacity: 0.35; }
   #pAnswers button.big { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #pAnswers button.opt { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 14px; font-size: 17px; font-weight: 700; }
+  #pAnswers button.opt svg { display: block; }
+  #pAnswers button.right { outline: 4px solid #2e7d32; }
+  #pAnswers button.wrong { outline: 4px solid #c62828; }
+  #pAnswers button.dim { opacity: 0.35; }
+  #pAnswers .row { flex-basis: 100%; display: flex; justify-content: center; }
 
   /* Panel de canciones */
   #songs {
@@ -338,10 +345,7 @@
 <svg id="staff" xmlns="http://www.w3.org/2000/svg"></svg>
 <div id="practice" hidden>
   <div class="pHead">
-    <div class="seg" id="pTabs">
-      <button data-ex="read" data-tip="Leer notas: di qué nota es">📖 Leer notas</button>
-      <button data-ex="dict" data-tip="Dictado: escucha y escribe la melodía">👂 Dictado</button>
-    </div>
+    <div class="seg" id="pTabs"></div>
     <div class="seg" id="pOpts"></div>
     <div class="spacer"></div>
     <div id="pScore"></div>
@@ -423,7 +427,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v31';
+  const APP_VERSION = 'v32';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -1881,6 +1885,9 @@
   }
 
   function drawPracticeStaff() {
+    withGeometry(PG, pStaff, drawPracticeStaffNow);
+  }
+  function drawPracticeStaffNow() {
     const { w, h, gap, left, right } = PG;
     pStaff.setAttribute('viewBox', `0 0 ${w} ${h}`);
     pStaff.innerHTML = '';
@@ -2095,18 +2102,287 @@
   pStaff.addEventListener('pointerup', endPTone);
   pStaff.addEventListener('pointercancel', endPTone);
 
+  // ---- Dibujar figuras en cualquier svg (pentagrama pequeño de las opciones) ----
+  function withGeometry(geo, target, fn) {
+    const savedG = G, savedLayer = layer;
+    G = geo;
+    layer = target;
+    try { fn(); } finally { G = savedG; layer = savedLayer; }
+  }
+  // Dibuja figuras repartidas a lo ancho según su duración. items: [{ fig, p }]
+  function drawFigureRow(target, geo, items, { x0, x1, ink = null, opacity = 1 } = {}) {
+    const total = items.reduce((a, it) => a + Math.max(it.fig.beats, 0.75), 0);
+    let x = x0;
+    withGeometry(geo, target, () => items.forEach(it => {
+      const w = (x1 - x0) * Math.max(it.fig.beats, 0.75) / total;
+      if (it.fig) drawNote(geo.bands[0], x + w / 2 - geo.gap * 0.9, it.p, it.fig, { ink, opacity, ring: !!it.ring });
+      x += w;
+    }));
+  }
+  function miniStaff(items, { w = 200, h = 100, ink = '#1d1d1f' } = {}) {
+    const svgEl = document.createElementNS(NS, 'svg');
+    svgEl.setAttribute('width', w);
+    svgEl.setAttribute('height', h);
+    svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    const gap = h / 8;
+    const geo = { gap, bands: [{ bottomLine: h / 2 + gap * 1.5 }] };
+    for (let i = 0; i < 5; i++) {
+      const y = geo.bands[0].bottomLine - i * gap;
+      el(svgEl, 'line', { x1: 2, x2: w - 2, y1: y, y2: y, stroke: '#b9ae98', 'stroke-width': 1 });
+    }
+    drawFigureRow(svgEl, geo, items, { x0: 6, x1: w - 6, ink });
+    return svgEl;
+  }
+
+  // Ritmo al azar que suma `total` tiempos, con las duraciones permitidas
+  function randomRhythm(total, allowed = [0.5, 1, 2, 4], minNotes = 2) {
+    for (let tries = 0; tries < 50; tries++) {
+      const out = [];
+      let left = total;
+      while (left > 0) {
+        const opts = allowed.filter(b => b <= left && !(b === total && minNotes > 1));
+        const b = opts[rand(0, opts.length - 1)];
+        out.push(b);
+        left -= b;
+      }
+      if (out.length >= minNotes) return out;
+    }
+    return Array(total).fill(1);
+  }
+  const FIG_OF = { 0.5: FIGURES[0], 1: FIGURES[1], 2: FIGURES[2], 4: FIGURES[3] };
+  const BEATS_TXT = b => b === 0.5 ? '½ tiempo' : b === 1 ? '1 tiempo' : `${b} tiempos`;
+  const melodyFor = beats => beats.map(b => ({ fig: FIG_OF[b], p: rand(0, 7) }));
+
+  function playRhythm(items, { tempo = 90, accentEvery = 0 } = {}) {
+    const ctx = audio();
+    const beat = 60 / tempo;
+    let t = ctx.currentTime + 0.1, pos = 0;
+    for (const it of items) {
+      const dur = it.fig.beats * beat;
+      scheduleTone(ctx, it.p ?? 2, t, dur * 0.9, accentEvery ? pos % accentEvery === 0 : pos === 0);
+      t += dur;
+      pos += it.fig.beats;
+    }
+  }
+
+  // ---- Preguntas de opción múltiple: rondas de 10 con estrellas y récord ----
+  // Cada ejercicio crea preguntas: { prompt, draw(answered), options: [{ label, items?, correct }], play?, good, bad(opt) }
+  const QUIZZES = {
+    // Nivel 2: ¿cuánto dura esta figura?
+    figs: () => {
+      const b = [0.5, 1, 2, 4][rand(0, 3)];
+      const item = { fig: FIG_OF[b], p: rand(0, 7) };
+      return {
+        prompt: '¿Cuánto dura esta figura?',
+        draw() {
+          drawPracticeStaff();
+          drawFigureRow(pStaff, PG, [item], { x0: PG.w * 0.35, x1: PG.w * 0.65 });
+        },
+        options: [0.5, 1, 2, 4].map(o => ({ label: BEATS_TXT(o), correct: o === b })),
+        onAnswer: () => playRhythm([item]),
+        good: `¡Sí! La ${item.fig.name.toLowerCase()} dura ${BEATS_TXT(b)} 🎉`,
+        bad: () => `Es una ${item.fig.name.toLowerCase()}: dura ${BEATS_TXT(b)}`,
+      };
+    },
+    // Nivel 2: ¿qué ritmo sonó?
+    rhythm: () => {
+      const answer = randomRhythm(4, [0.5, 1, 2]);
+      const seen = new Set([answer.join()]);
+      const all = [answer];
+      while (all.length < 3) {
+        const r = randomRhythm(4, [0.5, 1, 2]);
+        if (!seen.has(r.join())) { seen.add(r.join()); all.push(r); }
+      }
+      all.sort(() => Math.random() - 0.5);
+      const items = answer.map(b => ({ fig: FIG_OF[b], p: 2 }));
+      return {
+        prompt: '¿Qué ritmo has oído?<small>Toca ▶ Escuchar las veces que quieras</small>',
+        play: () => playRhythm(items),
+        autoplay: true,
+        draw(answered) {
+          drawPracticeStaff();
+          if (answered) drawFigureRow(pStaff, PG, melodyFor(answer), { x0: PG.left + PG.gap * 5, x1: PG.right - PG.gap });
+          else el(pStaff, 'text', { x: PG.w / 2, y: PG.h / 2, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': PG.gap * 3 }).textContent = '🎧';
+        },
+        options: all.map(r => ({ items: r.map(b => ({ fig: FIG_OF[b], p: 2 })), correct: r === answer })),
+        good: '¡Exacto! 🎉',
+        bad: () => 'Era este otro: escúchalo de nuevo',
+      };
+    },
+    // Nivel 3: ¿qué figura completa el compás?
+    complete: () => {
+      const meter = [2, 3, 4][rand(0, 2)];
+      const missing = [0.5, 1, 1, 2].filter(b => b < meter)[rand(0, meter > 2 ? 3 : 2)] || 1;
+      const rest = randomRhythm(meter - missing, [0.5, 1, 2], 1);
+      const at = rand(0, rest.length);
+      const items = melodyFor(rest);
+      items.splice(at, 0, { fig: null, missing: true, p: rand(0, 7) });
+      return {
+        prompt: `¿Qué figura falta para completar el compás de ${meter}/4?`,
+        draw(answered) {
+          drawPracticeStaff();
+          drawMeterAt(meter);
+          const shown = items.map(it => it.missing
+            ? (answered ? { fig: FIG_OF[missing], p: it.p, ring: true } : { fig: FIGURES[1], p: 4, hole: true })
+            : it);
+          const x0 = PG.left + PG.gap * 6.5, x1 = PG.right - PG.gap * 1.5;
+          // el hueco se dibuja como "?"
+          const total = shown.reduce((a, it) => a + Math.max(it.fig.beats, 0.75), 0);
+          let x = x0;
+          for (const it of shown) {
+            const w = (x1 - x0) * Math.max(it.fig.beats, 0.75) / total;
+            if (it.hole) {
+              el(pStaff, 'rect', { x: x + w / 2 - PG.gap * 1.1, y: yOf(PG.bands[0], 9), width: PG.gap * 2.2, height: PG.gap * 5, rx: PG.gap * 0.4, fill: '#fff', stroke: '#b9ae98', 'stroke-width': 3, 'stroke-dasharray': '8 6' });
+              el(pStaff, 'text', { x: x + w / 2, y: yOf(PG.bands[0], 4), 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': PG.gap * 2.2, 'font-weight': 800, fill: '#b9ae98' }).textContent = '?';
+            } else withGeometry(PG, pStaff, () => drawNote(PG.bands[0], x + w / 2 - PG.gap * 0.9, it.p, it.fig, { ring: !!it.ring }));
+            x += w;
+          }
+          el(pStaff, 'line', { x1: x1 + PG.gap, x2: x1 + PG.gap, y1: yOf(PG.bands[0], 8), y2: yOf(PG.bands[0], 0), stroke: '#1d1d1f', 'stroke-width': Math.max(2, PG.gap * 0.08) });
+        },
+        options: [0.5, 1, 2, 4].map(b => ({ items: [{ fig: FIG_OF[b], p: 4 }], label: FIG_OF[b].name, correct: b === missing })),
+        onAnswer: () => playRhythm(items.map(it => it.missing ? { fig: FIG_OF[missing], p: it.p } : it), { accentEvery: meter }),
+        good: `¡Bien! Faltaba ${BEATS_TXT(missing)}: una ${FIG_OF[missing].name.toLowerCase()} 🎉`,
+        bad: () => `Faltaba ${BEATS_TXT(missing)}: una ${FIG_OF[missing].name.toLowerCase()}`,
+      };
+    },
+    // Nivel 3: ¿qué compás es?
+    meter: () => {
+      const meter = [2, 3, 4][rand(0, 2)];
+      const bars = [randomRhythm(meter, [0.5, 1, 2, 4].filter(b => b <= meter), 1), randomRhythm(meter, [0.5, 1, 2], 2)];
+      const items = bars.map(melodyFor);
+      return {
+        prompt: '¿De qué compás son estos dos compases?<small>Cuenta los tiempos entre barra y barra</small>',
+        draw(answered) {
+          drawPracticeStaff();
+          if (answered) drawMeterAt(meter);
+          else el(pStaff, 'text', { x: PG.left + PG.gap * 4.6, y: yOf(PG.bands[0], 4), 'text-anchor': 'middle', 'dominant-baseline': 'central', 'font-size': PG.gap * 3, 'font-weight': 800, fill: '#b9ae98' }).textContent = '?';
+          const x0 = PG.left + PG.gap * 6.5, x1 = PG.right - PG.gap;
+          const mid = (x0 + x1) / 2;
+          drawFigureRow(pStaff, PG, items[0], { x0, x1: mid - PG.gap * 0.5 });
+          drawFigureRow(pStaff, PG, items[1], { x0: mid + PG.gap * 0.5, x1 });
+          for (const bx of [mid, x1 + PG.gap * 0.5])
+            el(pStaff, 'line', { x1: bx, x2: bx, y1: yOf(PG.bands[0], 8), y2: yOf(PG.bands[0], 0), stroke: '#1d1d1f', 'stroke-width': Math.max(2, PG.gap * 0.08) });
+        },
+        options: [2, 3, 4].map(m => ({ label: `${m}/4`, sub: `${m} tiempos`, correct: m === meter })),
+        onAnswer: () => playRhythm(items.flat(), { accentEvery: meter }),
+        good: `¡Sí! Es ${meter}/4: ${meter} tiempos en cada compás 🎉`,
+        bad: () => `Es ${meter}/4: cada compás tiene ${meter} tiempos`,
+      };
+    },
+  };
+
+  // Indicación de compás en el pentagrama del ejercicio
+  function drawMeterAt(meter) {
+    const attrs = {
+      x: PG.left + PG.gap * 4.6, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+      'font-family': 'Georgia, "Times New Roman", serif', 'font-weight': 700, 'font-size': PG.gap * 2.5, fill: '#1d1d1f',
+    };
+    el(pStaff, 'text', { ...attrs, y: yOf(PG.bands[0], 6) }).textContent = meter;
+    el(pStaff, 'text', { ...attrs, y: yOf(PG.bands[0], 2) }).textContent = '4';
+  }
+
+  let Q = null;                                  // estado de la ronda de preguntas
+  function startQuiz(id) {
+    Q = { id, q: 0, ok: 0, cur: null, answered: null, done: false };
+    nextQuiz();
+  }
+  function nextQuiz() {
+    if (Q.q >= ROUND) { Q.done = true; Q.newRecord = saveRecord(`quiz-${Q.id}`, Q.ok); return renderQuiz(); }
+    Q.cur = QUIZZES[Q.id]();
+    Q.q++;
+    Q.answered = null;
+    renderQuiz();
+    if (Q.cur.autoplay) setTimeout(() => Q?.cur?.play?.(), 400);
+  }
+  function answerQuiz(i) {
+    if (!Q || Q.answered || Q.done) return;
+    const right = Q.cur.options[i].correct;
+    Q.answered = { i, right };
+    if (right) Q.ok++;
+    Q.cur.onAnswer?.();
+    renderQuiz();
+    const id = Q.id, q = Q.q;
+    setTimeout(() => { if (Q && Q.id === id && Q.q === q && !practiceEl.hidden) nextQuiz(); }, right ? 1600 : 2800);
+  }
+  function renderQuiz() {
+    pOpts.innerHTML = '';
+    PG = practiceGeometry();
+    pStaff.setAttribute('viewBox', `0 0 ${PG.w} ${PG.h}`);
+    pStaff.innerHTML = '';
+    pAnswers.innerHTML = '';
+    pMsg.style.color = '';
+    if (Q.done) {
+      const stars = Q.ok >= 9 ? '⭐⭐⭐' : Q.ok >= 7 ? '⭐⭐' : Q.ok >= 5 ? '⭐' : '';
+      pScore.textContent = '';
+      pMsg.innerHTML = `${stars} ${Q.ok} de ${ROUND} ${stars}` +
+        `<small>${Q.newRecord ? '¡Nuevo récord!' : `Récord: ${records()[`quiz-${Q.id}`] || 0} de ${ROUND}`}</small>`;
+      drawPracticeStaff();
+      pAnswers.appendChild(button('Otra vez', 'big', () => startQuiz(Q.id)));
+      return;
+    }
+    const a = Q.answered, cur = Q.cur;
+    pScore.textContent = `Pregunta ${Q.q} de ${ROUND} · Aciertos ${Q.ok}`;
+    pMsg.innerHTML = !a ? cur.prompt : a.right ? cur.good : cur.bad(cur.options[a.i]);
+    if (a) pMsg.style.color = a.right ? '#2e7d32' : '#c62828';
+    withGeometry(PG, pStaff, () => cur.draw(!!a));
+    cur.options.forEach((o, i) => {
+      const b = document.createElement('button');
+      b.className = 'opt';
+      if (o.items) b.appendChild(miniStaff(o.items));
+      if (o.label) b.appendChild(document.createTextNode(o.label));
+      if (o.sub) { const sm = document.createElement('small'); sm.textContent = o.sub; b.appendChild(sm); }
+      if (a) b.classList.add(o.correct ? 'right' : i === a.i ? 'wrong' : 'dim');
+      b.addEventListener('click', () => answerQuiz(i));
+      pAnswers.appendChild(b);
+    });
+    if (cur.play) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.appendChild(button('▶ Escuchar', '', cur.play));
+      pAnswers.appendChild(row);
+    }
+  }
+
+  // ---- Qué ejercicios hay en cada nivel (cada nivel incluye los anteriores) ----
+  const EXERCISES = [
+    { id: 'read', label: '📖 Leer notas', level: 1, tip: 'Leer notas: di qué nota es' },
+    { id: 'dict', label: '👂 Dictado', level: 1, tip: 'Dictado: escucha y escribe la melodía' },
+    { id: 'figs', label: '⏱ Figuras', level: 2, tip: 'Figuras: ¿cuánto dura cada una?' },
+    { id: 'rhythm', label: '🥁 Ritmo', level: 2, tip: 'Ritmo de oído: elige el ritmo que suena' },
+    { id: 'complete', label: '🧩 Completar', level: 3, tip: 'Completar compás: ¿qué figura falta?' },
+    { id: 'meter', label: '🔢 ¿Qué compás?', level: 3, tip: '¿Qué compás?: 2/4, 3/4 o 4/4' },
+  ];
+
+  function buildTabs() {
+    const tabs = document.getElementById('pTabs');
+    tabs.innerHTML = '';
+    for (const ex of EXERCISES.filter(x => x.level <= level)) {
+      const b = button(ex.label, ex.id === EX.kind ? 'on' : '', () => showExercise(ex.id), ex.tip);
+      b.dataset.ex = ex.id;
+      tabs.appendChild(b);
+    }
+  }
+
   // ---- abrir / cerrar ----
   function showExercise(kind) {
     EX.kind = kind;
-    document.querySelectorAll('#pTabs button').forEach(b => b.classList.toggle('on', b.dataset.ex === kind));
-    if (kind === 'read') startRead(); else startDict();
+    buildTabs();
+    R = null;
+    D = kind === 'dict' ? D : null;
+    Q = null;
+    if (kind === 'read') startRead();
+    else if (kind === 'dict') startDict();
+    else startQuiz(kind);
   }
   function openPractice() {
     stop();
     closeSongs();
     practiceEl.hidden = false;
     window.history.pushState({ panel: 'practice' }, '');
-    showExercise(EX.kind);
+    // Se abre en los ejercicios del nivel actual (el primero propio del nivel)
+    const own = EXERCISES.filter(x => x.level === level);
+    const avail = EXERCISES.filter(x => x.level <= level);
+    showExercise((own[0] || avail[avail.length - 1]).id);
   }
   function closePractice(fromBack = false) {
     if (practiceEl.hidden) return;
@@ -2116,11 +2392,12 @@
   }
   document.getElementById('practiceBtn').addEventListener('click', openPractice);
   document.getElementById('pClose').addEventListener('click', () => closePractice());
-  document.querySelectorAll('#pTabs button').forEach(b => b.addEventListener('click', () => showExercise(b.dataset.ex)));
-  window.addEventListener('popstate', () => closePractice(true));
+  window.addEventListener('popstate', () => { if (window.history.state?.panel !== 'practice') closePractice(true); });
   window.addEventListener('resize', () => {
     if (practiceEl.hidden) return;
-    if (EX.kind === 'read' && R) renderRead(); else if (D) renderDict();
+    if (EX.kind === 'read' && R) renderRead();
+    else if (EX.kind === 'dict' && D) renderDict();
+    else if (Q) renderQuiz();
   });
 
   // --- Mis canciones ---
@@ -2149,7 +2426,7 @@
     songsEl.hidden = true;
     if (!fromBack && window.history.state?.panel === 'songs') window.history.back();
   }
-  window.addEventListener('popstate', () => closeSongs(true));
+  window.addEventListener('popstate', () => { if (window.history.state?.panel !== 'songs') closeSongs(true); });
 
   function listSongs() {
     const songs = readSongs().sort((a, b) => b.updated - a.updated);
