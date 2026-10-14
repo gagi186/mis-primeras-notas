@@ -456,7 +456,7 @@
   };
 
   // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
-  const APP_VERSION = 'v36';
+  const APP_VERSION = 'v37';
   document.getElementById('version').textContent = APP_VERSION;
 
   const svg = document.getElementById('staff');
@@ -3208,10 +3208,18 @@
   const installBtn = document.getElementById('installBtn');
   const installHint = document.getElementById('installHint');
   let installPrompt = null;
-  if (!installed && /iPad|iPhone|Macintosh/.test(navigator.userAgent) && 'ontouchend' in document) {
+  // Cómo se instala en este dispositivo (hasta que el navegador ofrezca su botón)
+  if (!installed) {
+    const ua = navigator.userAgent;
+    const appleTouch = /iPad|iPhone/.test(ua) || (/Macintosh/.test(ua) && 'ontouchend' in document);
+    const safari = /Safari/.test(ua) && !/Chrome|CriOS|Edg|Android/.test(ua);
     installRow.hidden = false;
     installBtn.hidden = true;
-    installHint.textContent = 'Para instalarla: Compartir → Agregar a pantalla de inicio.';
+    installHint.textContent = appleTouch
+      ? '📲 Para instalarla: botón Compartir de Safari → «Agregar a pantalla de inicio».'
+      : /Android/.test(ua) ? '📲 Para instalarla: menú ⋮ de Chrome → «Instalar app» o «Agregar a pantalla de inicio».'
+      : safari ? '📲 Para instalarla en la Mac: menú Archivo de Safari → «Añadir al Dock».'
+      : '📲 Para instalarla: icono de instalar en la barra de direcciones, o menú del navegador → «Instalar».';
   }
   window.addEventListener('beforeinstallprompt', e => {
     e.preventDefault();
