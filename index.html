@@ -1,0 +1,2017 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Mis primeras notas</title>
+<meta name="description" content="Aprende a leer y escribir música tocando el pentagrama.">
+<meta name="apple-mobile-web-app-title" content="Mis notas">
+<meta name="theme-color" content="#f1ebdd">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<style>
+  :root {
+    --bg: #fbf8f1;
+    --ink: #1d1d1f;
+    --bar: #f1ebdd;
+    --line: #cfc3a8;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    font-family: -apple-system, system-ui, sans-serif;
+    color: var(--ink);
+  }
+  #toolbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    padding-top: env(safe-area-inset-top);
+    background: var(--bar);
+    border-bottom: 1px solid #ddd3bd;
+    box-sizing: border-box;
+    z-index: 2;
+  }
+  .spacer { flex: 1; }
+  button {
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+  }
+  button:active { background: #eee6d4; }
+  #toolbar button { white-space: nowrap; }
+  #toolbar button.icon { font-size: 20px; padding: 8px 12px; line-height: 1; }
+  button:disabled { opacity: 0.35; }
+  .seg {
+    display: flex;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .seg button {
+    border: 0;
+    border-radius: 0;
+    padding: 10px 14px;
+  }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.on { background: var(--ink); color: #fff; }
+  .segLabel { display: flex; align-items: center; padding: 0 10px; font-weight: 700; font-size: 15px; background: #fff; color: #6b6358; }
+  #levels button { min-width: 42px; }
+
+  #status {
+    position: fixed;
+    top: 72px; left: 0; right: 0;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+    pointer-events: none;
+    z-index: 1;
+  }
+  body.zoom #status { font-size: 36px; }
+  #status.tip, body.zoom #status.tip { font-size: 18px; font-weight: 600; }
+
+  #bottom {
+    position: fixed;
+    left: 16px; right: 16px; bottom: 10px;
+    height: 44px;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 12px;
+    pointer-events: none;
+    z-index: 1;
+  }
+  #bottom > * { pointer-events: auto; }
+  #legend { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 14px;
+    color: #fff;
+  }
+  #pager { display: flex; align-items: center; gap: 10px; font-weight: 700; justify-self: end; }
+  #figs { display: flex; gap: 6px; }
+  #figs[hidden] { display: flex; visibility: hidden; }   /* conserva su hueco en la barra */
+  .fig {
+    font-size: 15px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: #fff;
+    min-width: 64px;
+    text-align: center;
+  }
+  .fig.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  body.zoom .fig { font-size: 18px; padding: 8px 18px; }
+  #pager[hidden] { display: none; }
+  #pager button { padding: 8px 16px; }
+
+  #tempo { align-items: stretch; }
+  #tempo button { padding: 10px 14px; font-size: 18px; line-height: 1; }
+  #tempoLabel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 76px;
+    padding: 0 6px;
+    background: #fff;
+    font-weight: 700;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Panel de canciones */
+  #songs {
+    position: fixed;
+    inset: 0;
+    background: rgba(29, 29, 31, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    touch-action: auto;
+  }
+  #songs[hidden] { display: none; }
+  .panel {
+    background: var(--bg);
+    border-radius: 20px;
+    width: min(560px, calc(100vw - 32px));
+    max-height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+  }
+  .panel header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px 8px;
+  }
+  .panel h2 { margin: 0; font-size: 22px; }
+  .panel h2 small { font-size: 12px; font-weight: 600; color: #9a907f; margin-left: 6px; }
+  .saveRow { display: flex; gap: 10px; padding: 8px 20px 16px; border-bottom: 1px solid #e4dccb; }
+  .saveRow input {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    font-size: 17px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .saveRow button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .fileRow { display: flex; gap: 10px; padding: 12px 20px 0; }
+  .fileRow button { flex: 1; font-size: 15px; }
+  #saveMsg.error { color: #c62828; }
+  #saveMsg { padding: 0 20px; font-size: 14px; font-weight: 600; color: #2e7d32; min-height: 0; }
+  #saveMsg:not(:empty) { padding-top: 10px; }
+  #songList { touch-action: pan-y; list-style: none; margin: 0; padding: 8px 12px 16px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  #songList li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 8px;
+    border-bottom: 1px solid #ece5d6;
+  }
+  #songList li:last-child { border-bottom: 0; }
+  .songInfo { flex: 1; min-width: 0; }
+  .songName { font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .songMeta { font-size: 13px; color: #6b6358; margin-top: 2px; }
+  #songList .empty { color: #6b6358; justify-content: center; border: 0; padding: 24px; }
+  #songList button { padding: 8px 14px; font-size: 15px; }
+  #songList button.danger { color: #c62828; }
+
+  @media (max-width: 900px) {
+    #toolbar { gap: 6px; padding: 0 8px; }
+    #toolbar .seg button { padding: 8px 9px; }
+    #toolbar button { font-size: 15px; padding: 8px 10px; }
+    #toolbar button.icon { font-size: 19px; }
+    #tempoLabel { min-width: 64px; }
+    .segLabel, #views .lbl { display: none; }
+    #levels button { min-width: 30px; padding: 8px 5px; }
+    #legend { flex-wrap: nowrap; gap: 4px; }
+    .chip { font-size: 13px; padding: 4px 8px; }
+    .fig, body.zoom .fig { min-width: 0; font-size: 14px; padding: 6px 10px; }
+  }
+
+  /* Selectores del nivel 4 (Nota/Silencio) y 5 (♮ ♯ ♭), abajo a la izquierda */
+  #tools {
+    position: fixed;
+    left: 16px;
+    bottom: 64px;
+    z-index: 1;
+    display: flex;
+    gap: 10px;
+  }
+  #tools { flex-wrap: wrap; align-items: flex-end; max-width: calc(100vw - 32px); }
+  #tools[hidden], #accs[hidden], #dots[hidden], #sixs[hidden], #keyTools[hidden], #accKey[hidden] { display: none; }
+  #modes, #accs, #dots, #sixs, #keyTools { background: #fff; }
+  #sixs button { font-size: 17px; padding: 10px 16px; }
+  #keyTools button { font-size: 17px; padding: 10px 16px; }
+  #accs #accKey { font-size: 15px; padding: 6px 12px; }
+  #dots button { font-size: 17px; padding: 10px 16px; }
+  #modes button { font-size: 17px; padding: 10px 18px; display: flex; align-items: center; gap: 6px; }
+  #accs button { font-size: 24px; line-height: 1; padding: 6px 0; min-width: 52px; }
+  #accs.dim { opacity: 0.35; }
+
+  #staff {
+    position: fixed;
+    top: 64px; left: 0;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <div class="seg" id="levels">
+    <span class="segLabel">Nivel</span>
+    <button data-level="1" data-tip="Nivel 1 · Las notas: aprende dónde va cada nota (todas duran lo mismo)">1</button>
+    <button data-level="2" data-tip="Nivel 2 · El ritmo: corcheas, negras, blancas y redondas — mantén el dedo más tiempo para notas más largas">2</button>
+    <button data-level="3" data-tip="Nivel 3 · El compás: llena cada compás con notas; las barras y ligaduras salen solas">3</button>
+    <button data-level="4" data-tip="Nivel 4 · Los silencios: elige ♩ Nota o Silencio abajo a la izquierda">4</button>
+    <button data-level="5" data-tip="Nivel 5 · El puntillo: activa • Puntillo para que la nota dure la mitad más">5</button>
+    <button data-level="6" data-tip="Nivel 6 · Las alteraciones: elige ♮, ♯ o ♭ abajo a la izquierda">6</button>
+    <button data-level="7" data-tip="Nivel 7 · Las armaduras: toca la clave para elegir la tonalidad">7</button>
+    <button data-level="8" data-tip="Nivel 8 · Las semicorcheas: activa ♬ Semicorchea; las corcheas y semicorcheas se unen con barras">8</button>
+  </div>
+  <div class="seg" id="views">
+    <button data-view="sheet" data-tip="Hoja: varios pentagramas a la vez (vista del profesor)">📄<span class="lbl"> Hoja</span></button>
+    <button data-view="zoom" data-tip="Zoom: un pentagrama grande que se desliza (vista del alumno)">🔍<span class="lbl"> Zoom</span></button>
+  </div>
+  <div class="spacer"></div>
+  <div class="seg" id="tempo">
+    <button id="slower" aria-label="Más lento" data-tip="Más lento — mantén pulsado para bajar de prisa">−</button>
+    <span id="tempoLabel" data-tip="Velocidad: negras por minuto">♩ = 90</span>
+    <button id="faster" aria-label="Más rápido" data-tip="Más rápido — mantén pulsado para subir de prisa">+</button>
+  </div>
+  <button id="play" data-tip="Toca la melodía desde el principio; pulsa otra vez para parar">▶ Tocar</button>
+  <button id="songsBtn" class="icon" aria-label="Mis canciones" data-tip="Mis canciones: guardar, abrir, exportar e importar">📁</button>
+  <button id="undo" class="icon" aria-label="Deshacer" data-tip="Deshacer — también 2 dedos en el pentagrama, o ⌘Z en la Mac">↶</button>
+  <button id="redo" class="icon" aria-label="Rehacer" data-tip="Rehacer — también 3 dedos en el pentagrama, o ⇧⌘Z en la Mac">↷</button>
+  <button id="clear" class="icon" aria-label="Borrar el pentagrama" data-tip="Borrar el pentagrama para empezar una canción nueva (las guardadas no se borran)">🗑</button>
+</div>
+<div id="status"></div>
+<svg id="staff" xmlns="http://www.w3.org/2000/svg"></svg>
+<div id="songs" hidden>
+  <div class="panel" role="dialog" aria-label="Mis canciones">
+    <header>
+      <h2>Mis canciones <small id="version"></small></h2>
+      <button id="closeSongs">Cerrar</button>
+    </header>
+    <div class="saveRow">
+      <input id="songName" placeholder="Nombre de la canción" maxlength="60" autocomplete="off">
+      <button id="saveSong" class="primary">Guardar</button>
+    </div>
+    <div class="fileRow">
+      <button id="exportAll">⬆︎ Exportar todas</button>
+      <button id="importBtn">⬇︎ Importar archivo</button>
+      <input id="importFile" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div id="saveMsg"></div>
+    <ul id="songList"></ul>
+  </div>
+</div>
+<div id="tools" hidden>
+<div class="seg" id="modes">
+  <button data-mode="note" data-tip="Nota: tocar el pentagrama pone notas">♩ Nota</button>
+  <button data-mode="rest" data-tip="Silencio: tocar el pentagrama pone silencios (mantén el dedo para silencios más largos)">
+    <svg viewBox="-1 -1.7 2 3" width="12" height="18" aria-hidden="true"><path d="M -0.25 -1.45 L 0.3 -0.8 Q -0.05 -0.45 -0.05 -0.2 L 0.35 0.4 Q -0.25 0.15 -0.15 0.95" fill="none" stroke="currentColor" stroke-width="0.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Silencio</button>
+</div>
+<div class="seg" id="dots" hidden>
+  <button id="dotBtn" data-tip="Puntillo: la nota dura la mitad más (negra con puntillo = 1½ tiempos, blanca con puntillo = 3)">• Puntillo</button>
+</div>
+<div class="seg" id="sixs" hidden>
+  <button id="sixBtn" data-tip="Semicorchea: un toque corto pone semicorchea (¼ de tiempo) en vez de corchea">♬ Semicorchea</button>
+</div>
+<div class="seg" id="keyTools" hidden>
+  <button id="scaleBtn" data-tip="Escucha la escala de la tonalidad elegida">▶ Escala</button>
+</div>
+<div class="seg" id="accs" hidden>
+  <button data-acc="key" id="accKey" data-tip="Armadura: la nota suena como dice la armadura (por ejemplo, en Sol mayor Fa es Fa♯)">Armadura</button>
+  <button data-acc="0" data-tip="♮ Natural: la nota tal cual">♮</button>
+  <button data-acc="1" data-tip="♯ Sostenido: la nota medio tono más aguda">♯</button>
+  <button data-acc="-1" data-tip="♭ Bemol: la nota medio tono más grave">♭</button>
+</div>
+</div>
+<div id="bottom">
+  <div id="legend"></div>
+  <div id="figs" hidden></div>
+  <div id="pager" hidden>
+    <button id="prev" data-tip="Ir hacia atrás en la canción">◀</button>
+    <span id="pageLabel"></span>
+    <button id="next" data-tip="Ir hacia adelante en la canción">▶</button>
+  </div>
+</div>
+
+<script>
+  // Clave de sol dibujada como trazado, igual en todos los dispositivos.
+  // Trazado de dominio público: https://commons.wikimedia.org/wiki/File:GClef.svg
+  // Mide 40 unidades de alto (unos 7 espacios del pentagrama); la espiral está en y = 25.
+  const CLEF = {
+    d: 'm12.049 3.5296c0.305 3.1263-2.019 5.6563-4.0772 7.7014-0.9349 0.897-0.155 0.148-0.6437 0.594-0.1022-0.479-0.2986-1.731-0.2802-2.11 0.1304-2.6939 2.3198-6.5875 4.2381-8.0236 0.309 0.5767 0.563 0.6231 0.763 1.8382zm0.651 16.142c-1.232-0.906-2.85-1.144-4.3336-0.885-0.1913-1.255-0.3827-2.51-0.574-3.764 2.3506-2.329 4.9066-5.0322 5.0406-8.5394 0.059-2.232-0.276-4.6714-1.678-6.4836-1.7004 0.12823-2.8995 2.156-3.8019 3.4165-1.4889 2.6705-1.1414 5.9169-0.57 8.7965-0.8094 0.952-1.9296 1.743-2.7274 2.734-2.3561 2.308-4.4085 5.43-4.0046 8.878 0.18332 3.334 2.5894 6.434 5.8702 7.227 1.2457 0.315 2.5639 0.346 3.8241 0.099 0.2199 2.25 1.0266 4.629 0.0925 6.813-0.7007 1.598-2.7875 3.004-4.3325 2.192-0.5994-0.316-0.1137-0.051-0.478-0.252 1.0698-0.257 1.9996-1.036 2.26-1.565 0.8378-1.464-0.3998-3.639-2.1554-3.358-2.262 0.046-3.1904 3.14-1.7356 4.685 1.3468 1.52 3.833 1.312 5.4301 0.318 1.8125-1.18 2.0395-3.544 1.8325-5.562-0.07-0.678-0.403-2.67-0.444-3.387 0.697-0.249 0.209-0.059 1.193-0.449 2.66-1.053 4.357-4.259 3.594-7.122-0.318-1.469-1.044-2.914-2.302-3.792zm0.561 5.757c0.214 1.991-1.053 4.321-3.079 4.96-0.136-0.795-0.172-1.011-0.2626-1.475-0.4822-2.46-0.744-4.987-1.116-7.481 1.6246-0.168 3.4576 0.543 4.0226 2.184 0.244 0.577 0.343 1.197 0.435 1.812zm-5.1486 5.196c-2.5441 0.141-4.9995-1.595-5.6343-4.081-0.749-2.153-0.5283-4.63 0.8207-6.504 1.1151-1.702 2.6065-3.105 4.0286-4.543 0.183 1.127 0.366 2.254 0.549 3.382-2.9906 0.782-5.0046 4.725-3.215 7.451 0.5324 0.764 1.9765 2.223 2.7655 1.634-1.102-0.683-2.0033-1.859-1.8095-3.227-0.0821-1.282 1.3699-2.911 2.6513-3.198 0.4384 2.869 0.9413 6.073 1.3797 8.943-0.5054 0.1-1.0211 0.143-1.536 0.143z',
+    width: 15,          // ancho en unidades del trazado
+    unitsPerGap: 5.75,  // unidades del trazado por espacio del pentagrama
+    gLineY: 25,         // altura de la línea de Sol dentro del trazado
+  };
+
+  // Súbelo con cada cambio para comprobar en el iPad que tienes la última versión
+  const APP_VERSION = 'v27';
+  document.getElementById('version').textContent = APP_VERSION;
+
+  const svg = document.getElementById('staff');
+  const statusEl = document.getElementById('status');
+  const NS = 'http://www.w3.org/2000/svg';
+  const TOOLBAR = 64;
+  const BOTTOM = 60;      // espacio para leyenda y páginas
+
+  // Nombres y colores (Do = rojo … Si = morado), se repiten en cada octava
+  const NAMES  = ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si'];
+  const COLORS = ['#e53935', '#2e9d44', '#1e6fd9', '#7b4a24', '#f2c200', '#f06aa8', '#8e3fc4'];
+
+  // Nivel 2: figuras según el tiempo que se mantiene el dedo (ms)
+  const FIGURES = [
+    { name: 'Corchea', until: 300,      beats: 0.5, width: 2.6, zoomWidth: 2.8, hollow: false, stem: true,  flag: true  },
+    { name: 'Negra',   until: 750,      beats: 1,   width: 3.2, zoomWidth: 2.8, hollow: false, stem: true,  flag: false },
+    { name: 'Blanca',  until: 1300,     beats: 2,   width: 4.2, zoomWidth: 3.3, hollow: true,  stem: true,  flag: false },
+    { name: 'Redonda', until: Infinity, beats: 4,   width: 5.4, zoomWidth: 3.9, hollow: true,  stem: false, flag: false },
+  ];
+  // Nivel 5: negra y blanca con puntillo (la mitad más de duración)
+  const DOTTED = {
+    Negra:  { name: 'Negra con puntillo',  beats: 1.5, width: 3.9, zoomWidth: 3.3, hollow: false, stem: true, flag: false, dot: true },
+    Blanca: { name: 'Blanca con puntillo', beats: 3,   width: 4.9, zoomWidth: 3.8, hollow: true,  stem: true, flag: false, dot: true },
+  };
+  DOTTED.Negra.base = FIGURES[1];
+  DOTTED.Blanca.base = FIGURES[2];
+  // Nivel 8: semicorchea (¼ de tiempo, dos banderas) y corchea con puntillo (¾)
+  const SEMI = { name: 'Semicorchea', beats: 0.25, width: 2.3, zoomWidth: 2.5, hollow: false, stem: true, flag: true, flags: 2 };
+  DOTTED.Corchea = { name: 'Corchea con puntillo', beats: 0.75, width: 3.0, zoomWidth: 3.0, hollow: false, stem: true, flag: true, dot: true, base: FIGURES[0] };
+  // Nivel 1: todas las notas iguales (solo la cabeza, un tiempo cada una)
+  const NOTE_FIG = { name: 'Nota', beats: 1, width: 3, zoomWidth: 2.7, hollow: false, stem: false, flag: false };
+
+  // Niveles: cada uno con su propia melodía (una sola secuencia de notas)
+  const LEVELS = {
+    1: { title: 'Las notas', hint: 'Toca el pentagrama para poner una nota', notes: [], history: [], redo: [], tempo: 90 },
+    2: { title: 'El ritmo', hint: 'Mantén el dedo: corchea → negra → blanca → redonda', notes: [], history: [], redo: [], tempo: 90 },
+    3: { title: 'El compás', hint: 'Llena cada compás con notas', notes: [], history: [], redo: [], tempo: 90, meter: 4 },
+    4: { title: 'Los silencios', hint: 'Elige ♩ Nota o Silencio y llena cada compás', notes: [], history: [], redo: [], tempo: 90, meter: 4 },
+    5: { title: 'El puntillo', hint: 'Activa • Puntillo para negras y blancas con puntillo', notes: [], history: [], redo: [], tempo: 90, meter: 3 },
+    6: { title: 'Las alteraciones', hint: 'Elige ♮, ♯ o ♭ y toca el pentagrama', notes: [], history: [], redo: [], tempo: 90, meter: 4 },
+    7: { title: 'Las armaduras', hint: 'Toca la clave para elegir la tonalidad', notes: [], history: [], redo: [], tempo: 90, meter: 4, key: 1 },
+    8: { title: 'Las semicorcheas', hint: 'Activa ♬ Semicorchea para notas de ¼ de tiempo', notes: [], history: [], redo: [], tempo: 72, meter: 2, key: 0 },
+  };
+  // Desde el nivel 3 hay compases; en el 4 también silencios
+  const hasBars = n => n >= 3;
+  const hasRests = n => n >= 4;
+  const hasDots = n => n >= 5;               // nivel 5: puntillo
+  const hasAccs = n => n >= 6;               // nivel 6: sostenidos y bemoles
+  const hasKeys = n => n >= 7;               // nivel 7: armaduras
+  const hasSix = n => n >= 8;                // nivel 8: semicorcheas y barras de unión
+
+  // Tonalidades del nivel 7. alt: alteración fija por nota (0 Do … 6 Si);
+  // sig: dónde se dibuja cada signo de la armadura (posición en el pentagrama)
+  const KEYS = [
+    { name: 'Do mayor',  tonic: -2, alt: {},             sig: [],                                  says: 'no lleva alteraciones' },
+    { name: 'Sol mayor', tonic: 2,  alt: { 3: 1 },       sig: [{ p: 8, s: 1 }],                    says: 'Fa es Fa♯' },
+    { name: 'Re mayor',  tonic: -1, alt: { 3: 1, 0: 1 }, sig: [{ p: 8, s: 1 }, { p: 5, s: 1 }],    says: 'Fa es Fa♯ y Do es Do♯' },
+    { name: 'Fa mayor',  tonic: 1,  alt: { 6: -1 },      sig: [{ p: 4, s: -1 }],                   says: 'Si es Si♭' },
+    { name: 'Si♭ mayor', tonic: 4,  alt: { 6: -1, 2: -1 }, sig: [{ p: 4, s: -1 }, { p: 7, s: -1 }], says: 'Si es Si♭ y Mi es Mi♭' },
+  ];
+  const validKey = v => Number.isInteger(v) && v >= 0 && v < KEYS.length ? v : 0;
+  // Compases posibles (tiempos de negra por compás): 2/4, 3/4, 4/4
+  const METERS = [2, 3, 4];
+  const validMeter = v => METERS.includes(v) ? v : 4;
+
+  // --- Guardado en la tablet (almacenamiento del navegador) ---
+  const SONGS_KEY = 'pentagrama.canciones';
+  const CURRENT_KEY = 'pentagrama.actual';
+
+  function readStore(key, fallback) {
+    try {
+      const v = JSON.parse(localStorage.getItem(key));
+      return v ?? fallback;
+    } catch (_) { return fallback; }
+  }
+  function writeStore(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; }
+    catch (_) { return false; }
+  }
+
+  // Velocidad: negras por minuto
+  const TEMPO_MIN = 40, TEMPO_MAX = 200, TEMPO_DEFAULT = 90;
+  const validTempo = v => Number.isFinite(v) ? Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, Math.round(v))) : TEMPO_DEFAULT;
+
+  // Las figuras se guardan por nombre
+  const figByName = name => [...FIGURES, SEMI, ...Object.values(DOTTED)].find(f => f.name === name) || NOTE_FIG;
+  // Los silencios (nivel 4) se guardan con r: 1 y sin altura
+  // La alteración elegida (nivel 6+) se guarda en a: 1 sostenido, -1 bemol, 0 becuadro.
+  // Sin a, la nota suena natural, o como diga la armadura en el nivel 7.
+  const pack = list => list.map(n => n.rest ? { r: 1, f: n.fig.name }
+    : { p: n.p, f: n.fig.name, ...(n.acc !== undefined ? { a: n.acc } : {}) });
+  const unpack = list => list.map(n => n.r
+    ? { p: null, rest: true, fig: figByName(n.f) }
+    : { p: n.p, fig: figByName(n.f), ...([1, 0, -1].includes(n.a) ? { acc: n.a } : {}) });
+
+  // Guarda lo que hay en pantalla para no perderlo al cerrar la app
+  const LEVEL_IDS = Object.keys(LEVELS).map(Number);
+  function saveCurrent() {
+    const data = {};
+    for (const n of LEVEL_IDS) {
+      const L = LEVELS[n];
+      data[n] = {
+        name: L.name, tempo: L.tempo, notes: pack(L.notes),
+        ...(hasBars(n) ? { meter: L.meter } : {}), ...(hasKeys(n) ? { key: L.key } : {}),
+      };
+    }
+    writeStore(CURRENT_KEY, data);
+  }
+
+  const current = readStore(CURRENT_KEY, null);
+  if (current) {
+    LEVEL_IDS.forEach(n => {
+      LEVELS[n].name = current[n]?.name || '';
+      if (hasBars(n) && current[n]?.meter) LEVELS[n].meter = validMeter(current[n].meter);
+      if (hasKeys(n) && current[n]?.key !== undefined) LEVELS[n].key = validKey(current[n].key);
+      if (current[n]?.tempo) LEVELS[n].tempo = validTempo(current[n].tempo);
+      LEVELS[n].notes.push(...unpack(current[n]?.notes || []));
+    });
+  }
+
+  // Posición p: 0 = 1ª línea (Mi4), cada paso = línea o espacio. Do4 = -2.
+  const P_MIN = -4, P_MAX = 12;
+  const noteIndex = p => (((p + 2) % 7) + 7) % 7;
+
+  let level = 1;
+  let view = 'sheet';    // 'sheet' = hoja completa (profesor), 'zoom' = un pentagrama grande (alumno)
+  let page = 0;          // página visible (Hoja)
+  let scrollX = 0;       // desplazamiento del pentagrama (Zoom)
+  let scrollTarget = 0;  // hacia dónde se desliza
+  let layer;             // grupo SVG donde se dibujan las notas
+  let G;                 // geometría actual
+  let press = null;      // pulsación en curso
+  let playing = null;    // reproducción en curso
+  let scaleView = null;  // nivel 7: escala que se muestra (y suena) en lugar de la partitura
+  // Lo que se ve y se toca: la partitura, o la escala mientras suena
+  const shown = () => scaleView ? scaleView.list : notes();
+
+  const notes = () => LEVELS[level].notes;
+  let mode = 'note';     // nivel 3: 'note' pone notas, 'rest' pone silencios
+  const modesEl = document.getElementById('modes');
+  const modeBtns = modesEl.querySelectorAll('button');
+  function setMode(m) {
+    mode = m;
+    modeBtns.forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+  }
+  modeBtns.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+  // Nivel 6: alteración con la que se ponen las notas (0 natural, 1 sostenido, -1 bemol);
+  // en el nivel 7 también 'key': lo que diga la armadura
+  let accSel = 0;
+  const toolsEl = document.getElementById('tools');
+  const accsEl = document.getElementById('accs');
+  const accBtns = accsEl.querySelectorAll('button');
+  function setAcc(a) {
+    accSel = a;
+    accBtns.forEach(b => b.classList.toggle('on', String(a) === b.dataset.acc));
+  }
+  accBtns.forEach(b => b.addEventListener('click', () =>
+    setAcc(b.dataset.acc === 'key' ? 'key' : +b.dataset.acc)));
+
+  // Nivel 5: puntillo activado o no
+  let dotOn = false;
+  const dotsEl = document.getElementById('dots');
+  const dotBtn = document.getElementById('dotBtn');
+  function setDot(on) {
+    dotOn = on;
+    dotBtn.classList.toggle('on', on);
+    if (G) render();
+  }
+  dotBtn.addEventListener('click', () => setDot(!dotOn));
+
+  // Selectores de abajo a la izquierda según el nivel
+  function showTools() {
+    toolsEl.hidden = !hasRests(level);
+    dotsEl.hidden = !hasDots(level);
+    sixsEl.hidden = !hasSix(level);
+    document.getElementById('accKey').hidden = !hasKeys(level);
+    document.getElementById('keyTools').hidden = !hasKeys(level);
+    accsEl.hidden = !hasAccs(level);
+  }
+
+  // Nivel 8: semicorchea activada o no
+  let sixOn = false;
+  const sixsEl = document.getElementById('sixs');
+  const sixBtn = document.getElementById('sixBtn');
+  function setSix(on) {
+    sixOn = on;
+    sixBtn.classList.toggle('on', on);
+    if (G) render();
+  }
+  sixBtn.addEventListener('click', () => setSix(!sixOn));
+
+  // Lo que dice la armadura para esa nota (nivel 7), y cómo suena de verdad una nota:
+  // su alteración elegida o, si no tiene, la de la armadura
+  const keyAccOf = p => hasKeys(level) ? (KEYS[LEVELS[level].key].alt[noteIndex(p)] || 0) : 0;
+  const soundAcc = (p, chosen) => chosen === null || chosen === undefined ? keyAccOf(p) : chosen;
+  const effAcc = n => soundAcc(n.p, n.acc);
+
+  // Nombre de la nota con su alteración: Fa♯, Si♭
+  const SYM = { 1: '♯', '-1': '♭', 0: '' };
+  const noteName = (p, acc = 0) => NAMES[noteIndex(p)] + SYM[acc || 0];
+  const undoBtn = document.getElementById('undo');
+  const redoBtn = document.getElementById('redo');
+  const history = () => LEVELS[level].history;
+  const redoStack = () => LEVELS[level].redo;
+  // Un cambio nuevo se apunta para deshacer y anula lo que se podía rehacer
+  function record(entry) {
+    history().push(entry);
+    redoStack().length = 0;
+  }
+
+  // Guía de figuras
+  const figsEl = document.getElementById('figs');
+  FIGURES.forEach(f => {
+    const d = document.createElement('span');
+    d.className = 'fig';
+    d.textContent = f.name;
+    d.dataset.tip = f.name === 'Corchea' ? 'Corchea (½ tiempo): un toque corto'
+      : f.name === 'Negra' ? 'Negra (1 tiempo): mantén el dedo un momento'
+      : f.name === 'Blanca' ? 'Blanca (2 tiempos): mantén el dedo un poco más'
+      : 'Redonda (4 tiempos): mantén el dedo hasta que se ilumine';
+    figsEl.appendChild(d);
+  });
+
+  // Leyenda
+  const legend = document.getElementById('legend');
+  NAMES.forEach((n, i) => {
+    const c = document.createElement('span');
+    c.className = 'chip';
+    c.textContent = n;
+    c.style.background = COLORS[i];
+    c.dataset.tip = `${n} siempre es de este color, en cualquier octava`;
+    if (i === 4) c.style.color = '#3a3000';
+    legend.appendChild(c);
+  });
+
+  // --- Geometría ---
+  function computeGeometry() {
+    const w = window.innerWidth;
+    const h = window.innerHeight - TOOLBAR;
+    // Si los selectores de abajo ocupan más de una fila, el pentagrama les deja sitio
+    showTools();
+    const tools = toolsEl.hidden ? 0 : Math.max(0, toolsEl.offsetHeight - 50);
+    const usable = h - BOTTOM - tools;
+    let count, gap;
+    if (view === 'zoom') {
+      count = 1;
+      gap = Math.min(usable / 10.5, w / 12);
+    } else {
+      count = h > w ? 3 : 2;
+      gap = Math.min(usable / count / 12, w / 24);
+    }
+    const bandH = usable / count;
+    const bands = [];
+    for (let i = 0; i < count; i++) {
+      const top = i * bandH;
+      bands.push({ top, bottom: top + bandH, bottomLine: top + bandH / 2 + gap * 2 });
+    }
+    const left = Math.max(32, w * 0.04);
+    const right = w - left;
+    return {
+      w, h, gap, count, bandH, bands, left, right,
+      firstX: left + gap * 4.2,
+      end: right - gap * 0.6,
+    };
+  }
+
+  // --- Zoom: desplazamiento ---
+  const FOLLOW = 0.75;                       // la nota nueva no pasa del 75 % del ancho
+  const viewW = () => G.end - G.firstX;
+
+  // Lo máximo que se puede desplazar: el final de la melodía en el punto FOLLOW
+  function maxScrollFor(pos) {
+    const endX = pos.length ? pos[pos.length - 1].end : G.firstX;
+    return Math.max(0, endX - G.firstX - viewW() * FOLLOW);
+  }
+
+  // Muelle amortiguado: arranca y frena suave, sin tirones
+  const SPRING = 6;          // más alto = más rápido
+  let scrolling = false;
+  let scrollV = 0;           // velocidad actual (px/s)
+  function animateScroll() {
+    if (scrolling) return;
+    scrolling = true;
+    let last = performance.now();
+    requestAnimationFrame(function step(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const a = SPRING * SPRING * (scrollTarget - scrollX) - 2 * SPRING * scrollV;
+      scrollV += a * dt;
+      scrollX += scrollV * dt;
+      if (Math.abs(scrollTarget - scrollX) < 0.5 && Math.abs(scrollV) < 5) {
+        scrollX = scrollTarget;
+        scrollV = 0;
+        scrolling = false;
+      }
+      if (!press && !playing) render();
+      if (scrolling) requestAnimationFrame(step);
+    });
+  }
+
+  const yOf = (band, p) => band.bottomLine - p * G.gap / 2;
+  const pageOf = line => Math.floor(line / G.count);
+
+  // Figuras por duración en corcheas, para partir notas que cruzan la barra
+  // Las duraciones se cuentan en semicorcheas (negra = 4)
+  const BY_UNITS = {
+    16: FIGURES[3], 12: DOTTED.Blanca, 8: FIGURES[2], 6: DOTTED.Negra,
+    4: FIGURES[1], 3: DOTTED.Corchea, 2: FIGURES[0], 1: SEMI,
+  };
+  const unitsOf = fig => Math.round(fig.beats * 4);
+  // Parte una duración en figuras: 6 → negra + corchea,
+  // desde el nivel 5 → negra con puntillo; desde el 8 también semicorcheas
+  function splitUnits(u) {
+    const sizes = hasSix(level) ? [16, 12, 8, 6, 4, 3, 2, 1]
+      : hasDots(level) ? [16, 12, 8, 6, 4, 2] : [16, 8, 4, 2];
+    const parts = [];
+    for (const size of sizes) while (u >= size) { parts.push(size); u -= size; }
+    return parts;
+  }
+
+  // Reparte una secuencia de notas en líneas según el ancho disponible.
+  // En el nivel 3 también cuenta los tiempos, pone las barras de compás y, si una
+  // figura no cabe en el compás, la parte en varias unidas con ligadura.
+  // Cada elemento devuelve sus trozos (segs) tal como se dibujan.
+  function flow(items) {
+    let line = 0, x = G.firstX;
+    const bars = hasBars(level);
+    const full = (LEVELS[level].meter || 4) * 4;  // tiempos del compás, en semicorcheas
+    let filled = 0, measure = 1;
+    const BAR = G.gap * 0.6;                     // espacio extra para la barra
+    // En Zoom las figuras van más juntas para que quepan más notas
+    // Nivel 6: una alteración vale hasta la barra de compás. Aquí se decide qué signo
+    // dibujar: solo cuando la nota cambia respecto a lo que ya valía en el compás
+    // (♯ o ♭ la primera vez, ♮ becuadro para volver a natural).
+    let altered = new Map();                     // posición → alteración vigente en el compás
+    const SIGN = G.gap * 0.9;                    // sitio para el signo delante de la nota
+    const place = (fig, sign) => {
+      const pre = sign === undefined ? 0 : SIGN;
+      const w = (view === 'zoom' ? fig.zoomWidth : fig.width) * G.gap + pre;
+      if (view === 'sheet' && x + w > G.end && x > G.firstX) { line++; x = G.firstX; }
+      const seg = { line, x, w, fig, pre, sign };
+      x += w;
+      return seg;
+    };
+    const pos = items.map(n => {
+      const segs = [];
+      const startMeasure = measure;
+      let sign;
+      if (!n.rest && n.p !== null) {
+        const acc = effAcc(n);
+        // Si en el compás no se ha alterado esta nota, vale lo que diga la armadura
+        const before = altered.has(n.p) ? altered.get(n.p) : keyAccOf(n.p);
+        if (acc !== before) { sign = acc; altered.set(n.p, acc); }
+      }
+      if (!bars) segs.push(place(n.fig, sign));
+      else {
+        let left = unitsOf(n.fig);
+        while (left > 0) {
+          const part = Math.min(left, full - filled);
+          let at = filled;                       // dónde empieza cada trozo dentro del compás
+          for (const u of splitUnits(part)) {
+            const seg = place(BY_UNITS[u], sign);
+            seg.start = at;
+            seg.measure = measure;
+            at += u;
+            segs.push(seg);
+            sign = undefined;
+          }
+          filled += part;
+          left -= part;
+          if (filled === full) {                 // compás lleno: barra
+            segs[segs.length - 1].bar = x - G.gap * 0.2;
+            x += BAR;
+            filled = 0;
+            measure++;
+            altered = new Map();                 // las alteraciones dejan de valer
+          }
+        }
+      }
+      const first = segs[0], last = segs[segs.length - 1];
+      return {
+        segs, line: first.line, x: first.x, w: first.w, end: last.x + last.w,
+        measure: startMeasure, tied: segs.length > 1, sign: first.sign,
+      };
+    });
+    const lastItem = pos[pos.length - 1];
+    return {
+      pos,
+      lastLine: lastItem ? lastItem.segs[lastItem.segs.length - 1].line : 0,
+      measure, missing: bars ? (full - filled) / 4 : 0,   // compás en curso y tiempos que faltan
+    };
+  }
+
+  // Desde el nivel 2, según cuánto se mantiene el dedo; desde el 5, con puntillo si está activo
+  // y desde el 8, semicorchea en vez de corchea si está activa
+  function figureFor(ms, dot = false, six = false) {
+    if (level === 1) return NOTE_FIG;
+    const fig = FIGURES.find(f => ms < f.until);
+    if (six && fig === FIGURES[0]) return SEMI;
+    return dot && canDot(fig) ? DOTTED[fig.name] : fig;
+  }
+  // La corchea con puntillo solo existe desde el nivel 8
+  const canDot = fig => !!DOTTED[fig.name] && (fig !== FIGURES[0] || hasSix(level));
+
+  // --- Dibujo ---
+  function el(parent, name, attrs) {
+    const e = document.createElementNS(NS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e);
+    return e;
+  }
+
+  // beam: si la nota va unida con barra, { up, pEnd } (dirección y altura del final de la plica)
+  function drawNote(band, x, p, fig, { opacity = 1, active = false, del = false, beam = null, ring = false } = {}) {
+    const { gap } = G;
+    const color = COLORS[noteIndex(p)];
+    const y = yOf(band, p);
+    const ng = el(layer, 'g', { opacity: del ? 0.2 : opacity });
+    const cx = x + gap * 0.9;
+
+    // Resaltado de la nota que está sonando
+    if (active)
+      el(ng, 'circle', { cx, cy: y, r: gap * 1.25, fill: color, opacity: 0.25 });
+    // Aro: nota alterada por la armadura (al mostrar la escala)
+    if (ring)
+      el(ng, 'circle', { cx, cy: y, r: gap * 1.05, fill: 'none', stroke: color, 'stroke-width': gap * 0.12 });
+
+    // Líneas adicionales
+    const lw = Math.max(1.5, gap * 0.05);
+    for (let lp = -2; lp >= p; lp -= 2)
+      el(ng, 'line', { x1: cx - gap * 0.95, x2: cx + gap * 0.95, y1: yOf(band, lp), y2: yOf(band, lp), stroke: '#1d1d1f', 'stroke-width': lw });
+    for (let lp = 10; lp <= p; lp += 2)
+      el(ng, 'line', { x1: cx - gap * 0.95, x2: cx + gap * 0.95, y1: yOf(band, lp), y2: yOf(band, lp), stroke: '#1d1d1f', 'stroke-width': lw });
+
+    const rx = gap * 0.66, ry = gap * 0.46;
+    // Plica
+    if (fig.stem) {
+      const up = beam ? beam.up : p < 4;
+      const sx = up ? cx + rx * 0.92 : cx - rx * 0.92;
+      const sy2 = beam ? yOf(band, beam.pEnd) : up ? y - gap * 3.4 : y + gap * 3.4;
+      el(ng, 'line', { x1: sx, y1: y, x2: sx, y2: sy2, stroke: color, 'stroke-width': Math.max(2.5, gap * 0.12), 'stroke-linecap': 'round' });
+      // Banderas (una la corchea, dos la semicorchea), salvo si va unida con barra
+      for (let k = 0; fig.flag && !beam && k < (fig.flags || 1); k++) {
+        const fy = sy2 + (up ? 1 : -1) * k * gap * 0.75;
+        const d = up
+          ? `M ${sx} ${fy} q ${gap * 0.9} ${gap * 0.9} ${gap * 0.9} ${gap * 2.2}`
+          : `M ${sx} ${fy} q ${gap * 0.9} ${-gap * 0.9} ${gap * 0.9} ${-gap * 2.2}`;
+        el(ng, 'path', { d, fill: 'none', stroke: color, 'stroke-width': Math.max(2.5, gap * 0.14), 'stroke-linecap': 'round' });
+      }
+    }
+    // Puntillo: a la derecha de la cabeza, en un espacio (nunca sobre una línea)
+    if (fig.dot) {
+      const dy = p % 2 === 0 ? -gap * 0.5 : 0;
+      el(ng, 'circle', { cx: cx + gap * 1.05, cy: y + dy, r: gap * 0.17, fill: color });
+    }
+    // Cabeza
+    el(ng, 'ellipse', {
+      cx, cy: y, rx, ry,
+      transform: `rotate(-20 ${cx} ${y})`,
+      fill: fig.hollow ? '#fff' : color,
+      stroke: fig.hollow ? color : 'rgba(0,0,0,.35)',
+      'stroke-width': fig.hollow ? gap * 0.2 : Math.max(1, gap * 0.03),
+    });
+
+    if (del) {
+      const r = gap * 0.8;
+      const a = { stroke: '#c62828', 'stroke-width': gap * 0.18, 'stroke-linecap': 'round' };
+      el(layer, 'line', { x1: cx - r, y1: y - r, x2: cx + r, y2: y + r, ...a });
+      el(layer, 'line', { x1: cx - r, y1: y + r, x2: cx + r, y2: y - r, ...a });
+    }
+  }
+
+  // Silencios (nivel 4): en gris, centrados en el pentagrama
+  const REST_INK = '#3a3a3c';
+  function drawRest(band, x, fig, { opacity = 1, active = false, del = false } = {}) {
+    const g = G.gap;
+    const cx = x + g * 0.9;
+    const ng = el(layer, 'g', { opacity: del ? 0.2 : opacity });
+    if (active) el(ng, 'circle', { cx, cy: yOf(band, 4), r: g * 1.4, fill: '#8e8e93', opacity: 0.25 });
+    const stroke = { fill: 'none', stroke: REST_INK, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+    const shape = fig.base ? fig.base.name : fig.name;   // el silencio con puntillo es el mismo con un punto
+    if (shape === 'Redonda') {
+      // cuelga de la 4ª línea
+      el(ng, 'rect', { x: cx - g * 0.55, y: yOf(band, 6), width: g * 1.1, height: g * 0.5, fill: REST_INK });
+    } else if (shape === 'Blanca') {
+      // apoyado sobre la 3ª línea
+      el(ng, 'rect', { x: cx - g * 0.55, y: yOf(band, 4) - g * 0.5, width: g * 1.1, height: g * 0.5, fill: REST_INK });
+    } else if (shape === 'Negra') {
+      const y0 = yOf(band, 4);
+      const P = (dx, dy) => `${cx + dx * g} ${y0 + dy * g}`;
+      el(ng, 'path', {
+        d: `M ${P(-0.25, -1.45)} L ${P(0.3, -0.8)} Q ${P(-0.05, -0.45)} ${P(-0.05, -0.2)} L ${P(0.35, 0.4)} Q ${P(-0.25, 0.15)} ${P(-0.15, 0.95)}`,
+        'stroke-width': g * 0.26, ...stroke,
+      });
+    } else if (shape === 'Semicorchea') {
+      // como el de corchea, con dos puntos
+      for (const [pp, dx] of [[5, 0.12], [3, -0.05]])
+        el(ng, 'circle', { cx: cx - g * 0.3 + dx * g, cy: yOf(band, pp), r: g * 0.21, fill: REST_INK });
+      el(ng, 'path', {
+        d: `M ${cx - g * 0.18} ${yOf(band, 5) + g * 0.18} Q ${cx + g * 0.15} ${yOf(band, 5) + g * 0.3} ${cx + g * 0.45} ${yOf(band, 5.2)} L ${cx - g * 0.15} ${yOf(band, -0.5)}`,
+        'stroke-width': g * 0.13, ...stroke,
+      });
+      el(ng, 'path', {
+        d: `M ${cx - g * 0.35} ${yOf(band, 3) + g * 0.18} Q ${cx} ${yOf(band, 3) + g * 0.3} ${cx + g * 0.28} ${yOf(band, 3.2)}`,
+        'stroke-width': g * 0.13, ...stroke,
+      });
+    } else {
+      // corchea: punto y trazo inclinado
+      const yd = yOf(band, 5);
+      el(ng, 'circle', { cx: cx - g * 0.25, cy: yd, r: g * 0.23, fill: REST_INK });
+      el(ng, 'path', {
+        d: `M ${cx - g * 0.25} ${yd + g * 0.18} Q ${cx + g * 0.05} ${yd + g * 0.35} ${cx + g * 0.38} ${yd - g * 0.1} L ${cx - g * 0.05} ${yOf(band, 1.5)}`,
+        'stroke-width': g * 0.13, ...stroke,
+      });
+    }
+    if (fig.dot) el(ng, 'circle', { cx: cx + g * 0.95, cy: yOf(band, 5), r: g * 0.16, fill: REST_INK });
+    if (del) {
+      const r = g * 0.8, y = yOf(band, 4);
+      const a = { stroke: '#c62828', 'stroke-width': g * 0.18, 'stroke-linecap': 'round' };
+      el(layer, 'line', { x1: cx - r, y1: y - r, x2: cx + r, y2: y + r, ...a });
+      el(layer, 'line', { x1: cx - r, y1: y + r, x2: cx + r, y2: y - r, ...a });
+    }
+  }
+
+  // Sostenido, bemol o becuadro, centrado en x, del color de la nota
+  function drawAccidental(band, x, p, sign, opacity) {
+    const g = G.gap, y = yOf(band, p);
+    const color = COLORS[noteIndex(p)];
+    const ag = el(layer, 'g', { opacity, stroke: color, fill: 'none', 'stroke-linecap': 'butt' });
+    const line = (x1, y1, x2, y2, w) =>
+      el(ag, 'line', { x1: x + x1 * g, y1: y + y1 * g, x2: x + x2 * g, y2: y + y2 * g, 'stroke-width': w * g });
+    if (sign === 1) {                // ♯
+      line(-0.2, -1.15, -0.2, 1.25, 0.09);
+      line(0.2, -1.3, 0.2, 1.1, 0.09);
+      line(-0.45, -0.25, 0.45, -0.55, 0.24);
+      line(-0.45, 0.55, 0.45, 0.25, 0.24);
+    } else if (sign === -1) {        // ♭
+      line(-0.25, -1.7, -0.25, 0.5, 0.1);
+      el(ag, 'path', {
+        d: `M ${x - 0.25 * g} ${y + 0.5 * g} C ${x + 0.6 * g} ${y + 0.05 * g} ${x + 0.55 * g} ${y - 0.65 * g} ${x - 0.25 * g} ${y - 0.15 * g}`,
+        'stroke-width': 0.16 * g,
+      });
+    } else {                         // ♮
+      line(-0.2, -1.25, -0.2, 0.55, 0.09);
+      line(0.2, -0.55, 0.2, 1.25, 0.09);
+      line(-0.2, -0.25, 0.2, -0.45, 0.22);
+      line(-0.2, 0.45, 0.2, 0.25, 0.22);
+    }
+  }
+
+  // Nota o silencio (con su signo delante si lo lleva)
+  function drawItem(band, x, n, opts) {
+    const hx = x + (n.pre || 0);               // la cabeza se corre si hay signo
+    if (n.rest) return drawRest(band, hx, n.fig, opts);
+    drawNote(band, hx, n.p, n.fig, { ...opts, beam: n.beam || null });
+    if (n.sign !== undefined)
+      drawAccidental(band, hx + G.gap * 0.9 - G.gap * 1.3, n.p, n.sign, opts.del ? 0.2 : opts.opacity);
+  }
+
+  // Barra de compás
+  function drawBar(band, x) {
+    el(layer, 'line', {
+      x1: x, x2: x, y1: yOf(band, 8), y2: yOf(band, 0),
+      stroke: '#1d1d1f', 'stroke-width': Math.max(2, G.gap * 0.07),
+    });
+  }
+
+  // Ligadura entre dos trozos de la misma nota (curva rellena, del color de la nota).
+  // Si los trozos están en líneas distintas, x2 es null y se dibuja media ligadura en cada una.
+  function drawTie(band, x1, x2, p, opacity) {
+    const g = G.gap;
+    const y = yOf(band, p);
+    const dir = p < 4 ? 1 : -1;                  // plica arriba → ligadura por debajo
+    const sx = x1 + g * 1.25, ex = x2 === null ? sx + g * 1.4 : x2 + g * 0.55;
+    const mx = (sx + ex) / 2, y0 = y + dir * g * 0.55;
+    el(layer, 'path', {
+      d: `M ${sx} ${y0} Q ${mx} ${y0 + dir * g * 0.75} ${ex} ${y0} Q ${mx} ${y0 + dir * g * 0.55} ${sx} ${y0} Z`,
+      fill: COLORS[noteIndex(p)], stroke: COLORS[noteIndex(p)], 'stroke-width': g * 0.04, opacity,
+    });
+  }
+  function drawTieIn(band, x2, p, opacity) {
+    const g = G.gap;
+    const y = yOf(band, p);
+    const dir = p < 4 ? 1 : -1;
+    const ex = x2 + g * 0.55, sx = ex - g * 1.4;
+    const mx = (sx + ex) / 2, y0 = y + dir * g * 0.55;
+    el(layer, 'path', {
+      d: `M ${sx} ${y0} Q ${mx} ${y0 + dir * g * 0.75} ${ex} ${y0} Q ${mx} ${y0 + dir * g * 0.55} ${sx} ${y0} Z`,
+      fill: COLORS[noteIndex(p)], stroke: COLORS[noteIndex(p)], 'stroke-width': g * 0.04, opacity,
+    });
+  }
+
+  // Dibuja una nota o silencio con todos sus trozos, barras y ligaduras.
+  // where(seg) devuelve { band, dx } si el trozo se ve, o null si no.
+  function drawFlowed(n, item, where, opts) {
+    item.segs.forEach((seg, k) => {
+      const at = where(seg);
+      if (at) {
+        drawItem(at.band, seg.x + at.dx, { ...n, fig: seg.fig, pre: seg.pre, sign: seg.sign, beam: seg.beam }, opts);
+        if (seg.bar) drawBar(at.band, seg.bar + at.dx);
+      }
+      const next = item.segs[k + 1];
+      if (!next || n.rest) return;
+      const atNext = where(next);
+      const x1 = seg.x + seg.pre, x2 = next.x + next.pre;
+      if (at && atNext && at.band === atNext.band) drawTie(at.band, x1 + at.dx, x2 + atNext.dx, n.p, opts.opacity);
+      else {
+        if (at) drawTie(at.band, x1 + at.dx, null, n.p, opts.opacity);
+        if (atNext) drawTieIn(atNext.band, x2 + atNext.dx, n.p, opts.opacity);
+      }
+    });
+  }
+
+  // Nivel 8: agrupa corcheas y semicorcheas seguidas del mismo tiempo para unirlas con barra.
+  // Marca cada trozo con seg.beam y devuelve los grupos.
+  function beamGroups(items, pos) {
+    if (!hasSix(level)) return [];
+    const groups = [];
+    let cur = [];
+    const close = () => { if (cur.length > 1) groups.push(cur); cur = []; };
+    items.forEach((n, i) => pos[i].segs.forEach(seg => {
+      const ok = !n.rest && seg.fig.flag && seg.start !== undefined;
+      if (!ok) return close();
+      const beat = Math.floor(seg.start / 4);
+      const prev = cur[cur.length - 1];
+      if (prev && (prev.seg.line !== seg.line || prev.seg.measure !== seg.measure || prev.beat !== beat)) close();
+      cur.push({ seg, p: n.p, beat, ghost: !!n.ghost });
+    }));
+    close();
+    for (const g of groups) {
+      const ps = g.map(e => e.p);
+      const up = ps.reduce((a, b) => a + b, 0) / ps.length < 4;
+      const pEnd = up ? Math.max(...ps) + 7 : Math.min(...ps) - 7;
+      g.forEach(e => { e.seg.beam = { up, pEnd }; });
+    }
+    return groups;
+  }
+
+  function drawBeams(groups, where) {
+    const g = G.gap, rx = g * 0.66;
+    for (const grp of groups) {
+      const at = where(grp[0].seg);
+      if (!at) continue;
+      const { up, pEnd } = grp[0].seg.beam;
+      const y = yOf(at.band, pEnd);
+      const t = g * 0.42;                        // grosor de la barra
+      const dir = up ? 1 : -1;                   // hacia las notas
+      const xs = grp.map(e => e.seg.x + e.seg.pre + at.dx + g * 0.9 + (up ? rx * 0.92 : -rx * 0.92));
+      const opacity = grp.some(e => e.ghost) ? 0.55 : 1;
+      const bar = (x1, x2, yy) => el(layer, 'rect', {
+        x: Math.min(x1, x2) - g * 0.06, y: up ? yy : yy - t, width: Math.abs(x2 - x1) + g * 0.12, height: t,
+        fill: '#1d1d1f', opacity,
+      });
+      bar(xs[0], xs[xs.length - 1], y);          // barra de corcheas
+      // Segunda barra entre semicorcheas vecinas, o barra corta si la semicorchea está sola
+      const y2 = y + dir * g * 0.7;
+      grp.forEach((e, k) => {
+        if ((e.seg.fig.flags || 1) < 2) return;
+        const next = grp[k + 1], prev = grp[k - 1];
+        const two = x => x && (x.seg.fig.flags || 1) >= 2;
+        if (two(next)) bar(xs[k], xs[k + 1], y2);
+        else if (!two(prev)) bar(xs[k], next ? xs[k] + g * 0.9 : xs[k] - g * 0.9, y2);
+      });
+    }
+  }
+
+  // Indicación de compás (2/4, 3/4, 4/4) junto a la clave
+  function drawMeter(band) {
+    const x = G.tsX + G.gap * 0.8;
+    const attrs = {
+      x, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+      'font-family': 'Georgia, "Times New Roman", serif', 'font-weight': 700,
+      'font-size': G.gap * 2.5, fill: '#1d1d1f',
+    };
+    el(svg, 'text', { ...attrs, y: yOf(band, 6) }).textContent = LEVELS[level].meter;
+    el(svg, 'text', { ...attrs, y: yOf(band, 2) }).textContent = '4';
+  }
+
+  function drawStaff(band) {
+    const { gap, left, right } = G;
+    const ink = '#1d1d1f';
+    const top = yOf(band, 8), bottom = yOf(band, 0);
+    for (let i = 0; i < 5; i++) {
+      const y = yOf(band, i * 2);
+      el(svg, 'line', { x1: left, y1: y, x2: right, y2: y, stroke: ink, 'stroke-width': Math.max(1.5, gap * 0.05) });
+    }
+    el(svg, 'line', { x1: left, y1: top, x2: left, y2: bottom, stroke: ink, 'stroke-width': Math.max(2, gap * 0.07) });
+    el(svg, 'line', { x1: right, y1: top, x2: right, y2: bottom, stroke: ink, 'stroke-width': Math.max(2, gap * 0.07) });
+    // Clave de sol: la espiral se centra en la 2ª línea (Sol)
+    const k = gap / CLEF.unitsPerGap;
+    el(svg, 'path', {
+      d: CLEF.d, fill: ink,
+      transform: `translate(${left + gap * 0.3} ${yOf(band, 2) - CLEF.gLineY * k}) scale(${k})`,
+    });
+    if (hasKeys(level)) drawKeySig(band);
+    if (hasBars(level)) drawMeter(band);
+  }
+
+  // Armadura: cada ♯ o ♭ del color de su nota, entre la clave y el compás
+  function drawKeySig(band) {
+    KEYS[LEVELS[level].key].sig.forEach(({ p, s }, i) =>
+      drawAccidental(band, G.keyX + G.gap * (0.5 + i * 0.85), p, s, 1));
+  }
+
+  function render() {
+    const { w, h } = G;
+    svg.setAttribute('width', w);
+    svg.setAttribute('height', h);
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svg.innerHTML = '';
+
+    // Lo que se ve: las notas, más la nota que se está poniendo o cambiando
+    const list = shown();
+    const items = list.map((n, i) => ({ ...n, i }));
+    let fig = null, focus = null;
+    if (press) {
+      fig = figureFor(performance.now() - press.t0, press.dot, press.six);
+      const ghost = { p: press.rest ? null : press.p, rest: press.rest, fig, ghost: true, acc: press.acc ?? undefined };
+      if (press.edit === null) {
+        items.push(ghost);
+        focus = items.length - 1;
+      } else {
+        focus = press.edit;
+        items[focus] = press.del ? { ...items[focus], del: true } : ghost;
+      }
+    } else if (playing && playing.current) {
+      focus = playing.current.i;
+    }
+
+    const flowed = flow(items);
+    const { pos, lastLine } = flowed;
+    layer = svg;                                 // la cabecera se dibuja directamente
+    G.bands.forEach(drawStaff);
+
+    if (view === 'zoom') {
+      // Zoom: una tira continua que se desliza
+      const maxScroll = maxScrollFor(pos);
+      if (press && press.edit === null) {
+        // Escribiendo: que siempre quede espacio por delante
+        const endX = pos[focus].end;
+        const sx = endX - scrollTarget;
+        if (sx > G.firstX + viewW() * FOLLOW || sx < G.firstX + pos[focus].w)
+          scrollTarget = endX - G.firstX - viewW() * FOLLOW;
+      } else if (!press && focus !== null) {
+        // Reproduciendo: avance continuo, al ritmo de la música
+        const ev = playing.current;
+        const t = playing.ctx.currentTime - playing.t0;
+        const frac = Math.max(0, Math.min(1, (t - ev.start) / (ev.end - ev.start)));
+        const head = pos[focus].x + frac * (pos[focus].end - pos[focus].x);
+        scrollTarget = head - G.firstX - viewW() * 0.4;
+      }
+      scrollTarget = Math.max(0, Math.min(scrollTarget, maxScroll));
+      if (Math.abs(scrollTarget - scrollX) > 0.5) animateScroll();
+
+      // Las notas se desvanecen al llegar a la clave, sin taparla
+      const defs = el(svg, 'defs', {});
+      const grad = el(defs, 'linearGradient', {
+        id: 'fade', gradientUnits: 'userSpaceOnUse',
+        x1: G.headerRight, x2: G.headerRight + G.gap * 0.8, y1: 0, y2: 0,
+      });
+      el(grad, 'stop', { offset: 0, 'stop-color': '#000' });
+      el(grad, 'stop', { offset: 1, 'stop-color': '#fff' });
+      const mask = el(defs, 'mask', { id: 'fadeMask', maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: G.w, height: G.h });
+      el(mask, 'rect', { x: 0, y: 0, width: G.right, height: G.h, fill: 'url(#fade)' });
+      layer = el(svg, 'g', { mask: 'url(#fadeMask)' });
+      const band = G.bands[0];
+      const where = seg => {
+        const x = seg.x - scrollX;
+        return x + seg.w + G.gap < G.firstX - G.gap || x > G.right ? null : { band, dx: -scrollX };
+      };
+      const groups = beamGroups(items, pos);
+      items.forEach((n, i) => {
+        const active = !press && playing && playing.current && playing.current.i === n.i;
+        const ring = !!scaleView && keyAccOf(n.p) !== 0;
+        drawFlowed(n, pos[i], where, { opacity: n.ghost ? 0.55 : 1, active, del: n.del, ring });
+      });
+      drawBeams(groups, where);
+
+      pager.hidden = maxScroll <= 0;
+      pageLabel.textContent = '';
+      prevBtn.disabled = scrollTarget <= 0;
+      nextBtn.disabled = scrollTarget >= maxScroll;
+    } else {
+      // Hoja: varias líneas, por páginas
+      layer = svg;
+      const lastPage = pageOf(lastLine);
+      if (focus !== null) page = pageOf(pos[focus].line);
+      page = Math.max(0, Math.min(page, lastPage));
+      const where = seg => pageOf(seg.line) !== page ? null
+        : { band: G.bands[seg.line - page * G.count], dx: 0 };
+      const groups = beamGroups(items, pos);
+      items.forEach((n, i) => {
+        const active = !press && playing && playing.current && playing.current.i === n.i;
+        const ring = !!scaleView && keyAccOf(n.p) !== 0;
+        drawFlowed(n, pos[i], where, { opacity: n.ghost ? 0.55 : 1, active, del: n.del, ring });
+      });
+      drawBeams(groups, where);
+
+      pager.hidden = lastPage === 0;
+      pageLabel.textContent = `${page + 1} / ${lastPage + 1}`;
+      prevBtn.disabled = page === 0;
+      nextBtn.disabled = page === lastPage;
+    }
+
+    // Texto de estado
+    if (press) {
+      const name = press.rest ? `Silencio · ${fig.name}`
+        : level === 1 ? NAMES[noteIndex(press.p)]
+        : `${noteName(press.p, soundAcc(press.p, press.acc))} · ${fig.name}`;
+      if (press.del) {
+        statusEl.textContent = 'Suelta para borrar';
+        statusEl.style.color = '#c62828';
+      } else {
+        statusEl.textContent = press.edit !== null ? `Cambiar a ${name}` : name;
+        statusEl.style.color = press.rest ? REST_INK : COLORS[noteIndex(press.p)];
+      }
+    } else if (playing && playing.current) {
+      const cur = playing.current;
+      statusEl.textContent = (scaleView ? `Escala de ${scaleView.key.name}: ` : '') +
+        (cur.p === null ? '♪ (silencio)' : `♪ ${noteName(cur.p, cur.acc)}`);
+      statusEl.style.color = cur.p === null ? REST_INK : COLORS[noteIndex(cur.p)];
+    } else {
+      // Texto del control bajo el ratón; si no, la canción abierta o la ayuda del nivel
+      const L = LEVELS[level];
+      let text = L.name && L.notes.length ? `♫ ${L.name}` : `Nivel ${level} · ${L.title} — ${L.hint}`;
+      let color = '';
+      if (hasBars(level) && L.notes.length) {
+        // Cómo va el compás
+        const { measure, missing } = flowed;
+        const FR = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+        const whole = Math.floor(missing), part = FR[missing - whole] || '';
+        const amount = `${whole || ''}${part}`;
+        const lack = missing === 0 ? '' : missing <= 1 ? `falta ${amount} tiempo` : `faltan ${amount} tiempos`;
+        text = `${L.name ? `♫ ${L.name} · ` : ''}${hasKeys(level) ? `${KEYS[L.key].name} · ` : ''}${missing === L.meter || !lack ? `Compás ${measure}: empieza` : `Compás ${measure}: ${lack}`}`;
+      }
+      statusEl.textContent = hoverTip || text;
+      statusEl.style.color = hoverTip ? '#6b6358' : color;
+    }
+    statusEl.classList.toggle('tip', !!hoverTip && !press && !(playing && playing.current));
+
+    undoBtn.disabled = !history().length;
+    redoBtn.disabled = !redoStack().length;
+
+    // Guía de figuras (nivel 2): marca la figura elegida y cuánto falta para la siguiente
+    showTools();
+    accsEl.classList.toggle('dim', mode === 'rest');
+    figsEl.hidden = level === 1;
+    if (level !== 1) {
+      const held = press && !press.del ? performance.now() - press.t0 : null;
+      const cur = held !== null ? fig
+        : playing && playing.current ? shown()[playing.current.i]?.fig : null;
+      const six = hasSix(level) && sixOn, dot = hasDots(level) && dotOn;
+      FIGURES.forEach((f, i) => {
+        const pill = figsEl.children[i];
+        // Cómo se llama lo que pondría cada duración de toque
+        pill.textContent = six && f === FIGURES[0] ? 'Semicorchea' : f.name + (dot && canDot(f) ? ' •' : '');
+        const on = !!cur && (f === cur || f === cur.base || (cur === SEMI && f === FIGURES[0]));
+        pill.classList.toggle('on', on);
+        pill.style.background = '';
+        if (on && held !== null && f.until !== Infinity) {
+          const from = i ? FIGURES[i - 1].until : 0;
+          const pct = Math.round(100 * (held - from) / (f.until - from));
+          pill.style.background = `linear-gradient(90deg, #555 ${pct}%, var(--ink) ${pct}%)`;
+        }
+      });
+    }
+  }
+
+  // --- Sonido ---
+  let actx;
+  function audio() {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state !== 'running') actx.resume();
+    return actx;
+  }
+  // En iOS el audio se desbloquea con un gesto del usuario
+  document.addEventListener('touchend', audio);
+
+  const SEMIS = [0, 2, 4, 5, 7, 9, 11];
+  // acc: 1 sostenido (medio tono arriba), -1 bemol (medio tono abajo)
+  function freqOf(p, acc = 0) {
+    const s = p + 2;                       // pasos desde Do4
+    const oct = Math.floor(s / 7);
+    const midi = 60 + 12 * oct + SEMIS[((s % 7) + 7) % 7] + acc;
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  }
+
+  function makeVoice(ctx, gain, f) {
+    return [['triangle', 1, 1], ['sine', 2, 0.25]].map(([type, mult, vol]) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.value = f * mult;
+      g.gain.value = vol;
+      o.connect(g).connect(gain);
+      return { o, mult };
+    });
+  }
+
+  // Nota que suena mientras el dedo está apoyado
+  function startTone(p, acc = 0) {
+    const ctx = audio();
+    const now = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.35, now + 0.01);
+    gain.gain.setTargetAtTime(0.12, now + 0.02, 0.4);   // decae y se sostiene
+    gain.connect(ctx.destination);
+    const oscs = makeVoice(ctx, gain, freqOf(p, acc));
+    oscs.forEach(({ o }) => o.start(now));
+    return { ctx, gain, oscs };
+  }
+
+  function setTone(tone, p, acc = 0) {
+    const now = tone.ctx.currentTime;
+    const f = freqOf(p, acc);
+    tone.oscs.forEach(({ o, mult }) => o.frequency.setTargetAtTime(f * mult, now, 0.01));
+  }
+
+  function stopTone(tone) {
+    const now = tone.ctx.currentTime;
+    tone.gain.gain.cancelScheduledValues(now);
+    tone.gain.gain.setValueAtTime(tone.gain.gain.value, now);
+    tone.gain.gain.setTargetAtTime(0, now, 0.08);
+    tone.oscs.forEach(({ o }) => o.stop(now + 0.6));
+  }
+
+  // Nota programada en el tiempo (para reproducir la melodía)
+  function scheduleTone(ctx, p, when, dur, accent = false, acc = 0) {
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, when);
+    gain.gain.linearRampToValueAtTime(accent ? 0.5 : 0.35, when + 0.01);
+    gain.gain.setTargetAtTime(0.12, when + 0.02, 0.4);
+    gain.gain.setTargetAtTime(0, when + dur * 0.92, 0.05);
+    gain.connect(ctx.destination);
+    return makeVoice(ctx, gain, freqOf(p, acc)).map(({ o }) => {
+      o.start(when);
+      o.stop(when + dur + 0.4);
+      return o;
+    });
+  }
+
+  // --- Toques ---
+  function bandAt(clientY) {
+    const y = clientY - TOOLBAR;
+    const b = Math.floor(y / G.bandH);
+    return b >= 0 && b < G.count ? b : null;
+  }
+
+  function pitchAt(b, clientY) {
+    const p = Math.round((G.bands[b].bottomLine - (clientY - TOOLBAR)) / (G.gap / 2));
+    return Math.max(P_MIN, Math.min(P_MAX, p));
+  }
+
+  // Nota bajo el dedo (índice) o null
+  function noteAt(b, clientX) {
+    if (view === 'zoom' && clientX < G.firstX - G.gap * 0.3) return null;
+    const line = view === 'zoom' ? 0 : page * G.count + b;
+    const x = view === 'zoom' ? clientX + scrollX : clientX;
+    const { pos } = flow(notes());
+    const i = pos.findIndex(r => r.segs.some(sg => sg.line === line &&
+      x >= sg.x - G.gap * 0.3 && x < sg.x + sg.w));
+    return i < 0 ? null : i;
+  }
+
+  // ¿El dedo está sobre la indicación de compás? (niveles 3 y 4)
+  function onMeter(b, clientX, clientY) {
+    if (!hasBars(level)) return false;
+    const y = clientY - TOOLBAR, band = G.bands[b];
+    return clientX >= G.tsX - G.gap * 0.3 && clientX <= G.headerRight + G.gap * 0.3 &&
+      y >= yOf(band, 9) && y <= yOf(band, -1);
+  }
+
+  // ¿El dedo está sobre la clave o la armadura? (nivel 7)
+  function onKey(b, clientX, clientY) {
+    if (!hasKeys(level)) return false;
+    const y = clientY - TOOLBAR, band = G.bands[b];
+    return clientX >= G.left && clientX < G.tsX - G.gap * 0.3 &&
+      y >= yOf(band, 12) && y <= yOf(band, -4);
+  }
+
+  // Tocar la clave cambia la tonalidad: Do → Sol → Re → Fa → Si♭ → Do
+  function cycleKey() {
+    const L = LEVELS[level];
+    L.key = (L.key + 1) % KEYS.length;
+    saveCurrent();
+    relayout();                                  // la armadura cambia de ancho
+    flash(`${KEYS[L.key].name}: ${KEYS[L.key].says}`);
+  }
+
+  // Escribe la escala de la tonalidad en el pentagrama (8 negras, una octava hacia
+  // arriba) y la toca; cada nota se ilumina al sonar. Al terminar vuelve la partitura.
+  function playScale() {
+    stop();
+    const k = KEYS[LEVELS[level].key];
+    scaleView = { key: k, list: Array.from({ length: 8 }, (_, i) => ({ p: k.tonic + i, fig: FIGURES[1] })) };
+    page = 0;
+    scrollX = scrollTarget = 0;
+    scrollV = 0;
+    audio();
+    startPlayback(0);
+  }
+  document.getElementById('scaleBtn').addEventListener('click', playScale);
+
+  // Tocar el compás lo cambia: 2/4 → 3/4 → 4/4 → 2/4
+  function cycleMeter() {
+    const L = LEVELS[level];
+    L.meter = METERS[(METERS.indexOf(L.meter) + 1) % METERS.length];
+    saveCurrent();
+    render();
+    flash(`Compás de ${L.meter}/4: ${L.meter} tiempos de negra`);
+  }
+
+  function tick() {
+    if (!press) return;
+    render();
+    requestAnimationFrame(tick);
+  }
+
+  // --- Toque con varios dedos: 2 = deshacer, 3 = rehacer ---
+  // Se detecta con los eventos táctiles (touch*), que en el iPad cuentan bien los dedos.
+  let multi = null;              // { t0, max, moved, start: id → {x, y} } mientras dura el gesto
+
+  function cancelPress() {
+    if (!press) return;
+    if (press.tone) stopTone(press.tone);
+    press = null;
+    render();
+  }
+
+  svg.addEventListener('touchstart', e => {
+    e.preventDefault();          // sin zoom ni menús del sistema
+    if (e.touches.length < 2) return;
+    if (!multi) {
+      cancelPress();             // el primer dedo había empezado a poner una nota
+      multi = { t0: performance.now(), max: 0, moved: false, start: new Map() };
+    }
+    multi.max = Math.max(multi.max, e.touches.length);
+    for (const t of e.touches)
+      if (!multi.start.has(t.identifier)) multi.start.set(t.identifier, { x: t.clientX, y: t.clientY });
+  }, { passive: false });
+
+  svg.addEventListener('touchmove', e => {
+    if (!multi) return;
+    for (const t of e.touches) {
+      const s0 = multi.start.get(t.identifier);
+      if (s0 && Math.hypot(t.clientX - s0.x, t.clientY - s0.y) > 30) multi.moved = true;
+    }
+  }, { passive: true });
+
+  svg.addEventListener('touchend', e => {
+    if (!multi || e.touches.length) return;
+    // Último dedo levantado: toque rápido y sin arrastrar
+    const quick = performance.now() - multi.t0 < 700;
+    if (quick && !multi.moved && (multi.max === 2 || multi.max === 3)) {
+      if (multi.max === 2) doUndo(); else doRedo();
+    }
+    multi = null;
+  });
+  svg.addEventListener('touchcancel', e => { if (!e.touches.length) multi = null; });
+
+  // Mensaje breve en la barra de estado tras deshacer o rehacer
+  function flash(msg) {
+    clearTimeout(tipTimer);
+    setTip(msg);
+    tipTimer = setTimeout(() => setTip(null), 1200);
+  }
+  const doUndo = () => flash(undo() ? '↶ Deshecho' : 'No hay nada que deshacer');
+  const doRedo = () => flash(redo() ? '↷ Rehecho' : 'No hay nada que rehacer');
+
+  // Mac: tocar el trackpad con dos dedos es un clic derecho → deshacer
+  svg.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (!press) doUndo();
+  });
+
+  // Teclado: ⌘Z / Ctrl+Z deshacer, ⇧⌘Z / Ctrl+Y rehacer
+  document.addEventListener('keydown', e => {
+    if (!(e.metaKey || e.ctrlKey) || e.target.closest?.('input')) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); }
+    else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); doRedo(); }
+  });
+
+  svg.addEventListener('pointerdown', e => {
+    if (multi) return;           // durante el gesto de varios dedos no se ponen notas
+    if (scaleView) { stop(); return; }           // tocar durante la escala la cierra
+    if (e.pointerType === 'mouse' && e.button !== 0) return;   // solo el clic normal pone notas
+    if (press) return;
+    const b = bandAt(e.clientY);
+    if (b === null) return;
+    if (onMeter(b, e.clientX, e.clientY)) { cycleMeter(); return; }
+    if (onKey(b, e.clientX, e.clientY)) { cycleKey(); return; }
+    try { svg.setPointerCapture(e.pointerId); } catch (_) {}
+    const p = pitchAt(b, e.clientY);
+    const rest = hasRests(level) && mode === 'rest';
+    // null = lo que diga la armadura (y en niveles sin alteraciones, natural)
+    const acc = hasAccs(level) && !rest && accSel !== 'key' ? accSel : null;
+    const dot = hasDots(level) && dotOn;
+    press = {
+      dot, six: hasSix(level) && sixOn,
+      id: e.pointerId, b, p, t0: performance.now(), tone: rest ? null : startTone(p, soundAcc(p, acc)), rest, acc,
+      edit: noteAt(b, e.clientX), x0: e.clientX, del: false,
+    };
+    requestAnimationFrame(tick);
+  });
+
+  svg.addEventListener('pointermove', e => {
+    if (!press || e.pointerId !== press.id) return;
+    // Sobre una nota existente, deslizar hacia un lado = borrar
+    if (press.edit !== null) {
+      const del = Math.abs(e.clientX - press.x0) > G.gap * 2.5;
+      if (del && !press.del && press.tone) { stopTone(press.tone); press.tone = null; }
+      if (!del && press.del && !press.rest) press.tone = startTone(press.p, soundAcc(press.p, press.acc));
+      press.del = del;
+      if (del) return;
+    }
+    if (press.rest) return;                      // los silencios no tienen altura
+    const p = pitchAt(press.b, e.clientY);
+    if (p !== press.p && press.tone) setTone(press.tone, p, soundAcc(p, press.acc));
+    press.p = p;
+  });
+
+  function finish(e, commit) {
+    if (!press || e.pointerId !== press.id) return;
+    if (press.tone) stopTone(press.tone);
+    const fig = figureFor(performance.now() - press.t0, press.dot, press.six);
+    const { edit } = press;
+    const list = notes();
+    if (commit && press.del) {
+      record({ type: 'del', i: edit, old: list[edit] });
+      list.splice(edit, 1);
+    } else if (commit) {
+      const item = press.rest ? { p: null, rest: true, fig }
+        : { p: press.p, fig, ...(press.acc !== null && (press.acc !== 0 || hasKeys(level)) ? { acc: press.acc } : {}) };
+      if (edit === null) {
+        list.push(item);
+        record({ type: 'add' });
+      } else {
+        record({ type: 'set', i: edit, old: list[edit] });
+        list[edit] = item;
+      }
+    }
+    const added = commit && !press.del && edit === null;
+    press = null;
+    if (commit) saveCurrent();
+    render();
+    // Desde el nivel 3: avisar al cerrar un compás (y explicar puntillos y signos)
+    if (added && hasBars(level)) {
+      const { pos } = flow(list);
+      const last = pos[pos.length - 1];
+      const n = list[list.length - 1];
+      // Explicar los signos (niveles 6 y 7) y recordar cuánto dura el puntillo (nivel 5)
+      const ea = n.rest ? 0 : effAcc(n);
+      if (hasAccs(level) && !n.rest && last.sign === 0)
+        flash(`♮ Becuadro: ${noteName(n.p)} vuelve a ser natural en este compás`);
+      else if (hasKeys(level) && !n.rest && ea && last.sign === ea && keyAccOf(n.p) === ea)
+        flash(`${noteName(n.p, ea)}: se vuelve a escribir el ${SYM[ea]} porque antes, en este compás, era natural`);
+      else if (hasAccs(level) && !n.rest && ea && last.sign === undefined)
+        flash(hasKeys(level) && keyAccOf(n.p) === ea
+          ? `${KEYS[LEVELS[level].key].name}: ${noteName(n.p)} es ${noteName(n.p, ea)} (lo dice la armadura)`
+          : `${noteName(n.p, ea)}: el ${SYM[ea]} de antes sigue valiendo hasta la barra`);
+      else if (n.fig.dot && !last.tied)
+        flash(n.fig.base.name === 'Negra' ? '• Negra con puntillo = negra + corchea (1½ tiempos)'
+          : n.fig.base.name === 'Corchea' ? '• Corchea con puntillo = corchea + semicorchea (¾ de tiempo)'
+          : '• Blanca con puntillo = blanca + negra (3 tiempos)');
+      else if (n.fig === SEMI && !last.tied)
+        flash('♬ Semicorchea: ¼ de tiempo — 4 semicorcheas duran lo mismo que 1 negra');
+      else if (last.tied && !n.rest) flash(`⌒ Ligadura: la nota sigue sonando en el compás ${last.measure + 1}`);
+      else if (last.tied) flash(`El silencio sigue en el compás ${last.measure + 1}`);
+      else if (last.segs[last.segs.length - 1].bar) flash(`✓ Compás ${last.measure} completo`);
+    }
+  }
+  svg.addEventListener('pointerup', e => finish(e, true));
+  svg.addEventListener('pointercancel', e => finish(e, false));
+
+  // --- Reproducir la melodía ---
+  const playBtn = document.getElementById('play');
+
+  // Primero vuelve al principio y, cuando termina de regresar, empieza a sonar
+  let rewinding = false;
+  function play() {
+    if (!notes().length) return;
+    audio();                          // desbloquear el audio dentro del toque
+    rewinding = true;
+    playBtn.textContent = '■ Parar';
+    if (view === 'zoom') { scrollTarget = 0; animateScroll(); }
+    else page = 0;
+    render();
+    const t0 = performance.now();
+    requestAnimationFrame(function wait(now) {
+      if (!rewinding) return;                       // se detuvo mientras regresaba
+      const back = view !== 'zoom' || Math.abs(scrollX) < 3;   // ya casi en el principio
+      if (back && now - t0 > 350) { rewinding = false; startPlayback(); }
+      else requestAnimationFrame(wait);
+    });
+  }
+
+  function startPlayback(from = 0, list = shown()) {
+    const ctx = audio();
+    const beat = 60 / LEVELS[level].tempo;
+    const t0 = ctx.currentTime + 0.1;
+    const events = [];
+    const voices = [];
+    let t = 0;
+    // Desde el nivel 3: el primer tiempo de cada compás suena más fuerte
+    const full = (LEVELS[level].meter || 4) * 4;
+    let filled = 0;
+    list.forEach((n, i) => {
+      const downbeat = hasBars(level) && filled === 0;
+      filled = (filled + unitsOf(n.fig)) % full;
+      if (i < from) return;
+      const dur = n.fig.beats * beat;
+      const acc = n.rest ? 0 : effAcc(n);
+      events.push({ i, start: t, end: t + dur, p: n.p, acc });
+      if (!n.rest) voices.push(...scheduleTone(ctx, n.p, t0 + t, dur, downbeat, acc));
+      t += dur;
+    });
+    if (!events.length) return;
+    playing = { ctx, events, voices, t0, total: t, current: null };
+    playBtn.textContent = '■ Parar';
+    requestAnimationFrame(playTick);
+  }
+
+  function stop() {
+    if (rewinding) {
+      rewinding = false;
+      playBtn.textContent = '▶ Tocar';
+      return;
+    }
+    if (!playing) return;
+    const now = playing.ctx.currentTime;
+    playing.voices.forEach(o => { try { o.stop(now); } catch (_) {} });
+    playing = null;
+    playBtn.textContent = '▶ Tocar';
+    if (scaleView) {                             // al terminar la escala vuelve la partitura
+      scaleView = null;
+      showEnd();
+    }
+    render();
+  }
+
+  function playTick() {
+    if (!playing) return;
+    const t = playing.ctx.currentTime - playing.t0;
+    if (t >= playing.total) return stop();
+    const cur = playing.events.find(ev => t >= ev.start && t < ev.end) || null;
+    const changed = cur !== playing.current;
+    playing.current = cur;
+    // En Zoom se redibuja cada cuadro para que el avance sea continuo
+    if (!press && (changed || view === 'zoom')) render();
+    requestAnimationFrame(playTick);
+  }
+
+  // --- Velocidad ---
+  const tempoLabel = document.getElementById('tempoLabel');
+  const showTempo = () => { tempoLabel.textContent = `♩ = ${LEVELS[level].tempo}`; };
+
+  function setTempo(v) {
+    const t = validTempo(v);
+    if (t === LEVELS[level].tempo) return;
+    LEVELS[level].tempo = t;
+    showTempo();
+    saveCurrent();
+    // Si está sonando, sigue desde la nota actual a la nueva velocidad
+    if (playing) {
+      const from = playing.current ? playing.current.i : 0;
+      const now = playing.ctx.currentTime;
+      playing.voices.forEach(o => { try { o.stop(now); } catch (_) {} });
+      playing = null;
+      startPlayback(from);
+    }
+  }
+
+  // Mantener pulsado − / + cambia la velocidad de forma continua
+  function holdRepeat(btn, step) {
+    let timer = null;
+    const end = () => { clearTimeout(timer); timer = null; };
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      setTempo(LEVELS[level].tempo + step);
+      const again = delay => { timer = setTimeout(() => { setTempo(LEVELS[level].tempo + step); again(90); }, delay); };
+      again(450);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, end));
+  }
+  holdRepeat(document.getElementById('slower'), -5);
+  holdRepeat(document.getElementById('faster'), 5);
+
+  playBtn.addEventListener('click', () => (playing || rewinding ? stop() : play()));
+
+  // --- Botones ---
+  // Devuelve true si había algo que deshacer
+  function undo() {
+    const list = notes();
+    const h = history().pop();
+    if (!h) return false;
+    if (h.type === 'add') h.note = list.pop();
+    if (h.type === 'set') { h.now = list[h.i]; list[h.i] = h.old; }
+    if (h.type === 'del') list.splice(h.i, 0, h.old);
+    redoStack().push(h);
+    saveCurrent();
+    render();
+    return true;
+  }
+
+  // Vuelve a aplicar lo último que se deshizo
+  function redo() {
+    const list = notes();
+    const h = redoStack().pop();
+    if (!h) return false;
+    if (h.type === 'add') list.push(h.note);
+    if (h.type === 'set') list[h.i] = h.now;
+    if (h.type === 'del') list.splice(h.i, 1);
+    history().push(h);
+    saveCurrent();
+    render();
+    return true;
+  }
+  document.getElementById('undo').addEventListener('click', undo);
+  document.getElementById('redo').addEventListener('click', redo);
+  document.getElementById('clear').addEventListener('click', () => {
+    stop();
+    notes().length = 0;
+    history().length = 0;
+    redoStack().length = 0;
+    LEVELS[level].name = '';          // empieza una canción nueva
+    page = 0;
+    saveCurrent();
+    render();
+  });
+
+  // --- Barra de estado: qué hace cada control ---
+  let hoverTip = null;
+  let tipTimer = null;
+  function setTip(text) {
+    if (text === hoverTip) return;
+    hoverTip = text;
+    if (!press) render();
+  }
+
+  // Con ratón o trackpad: al pasar por encima
+  document.addEventListener('pointerover', e => {
+    if (e.pointerType !== 'mouse') return;
+    const t = e.target.closest('[data-tip]');
+    if (t) setTip(t.dataset.tip);
+  });
+  document.addEventListener('pointerout', e => {
+    if (e.pointerType !== 'mouse') return;
+    const t = e.target.closest('[data-tip]');
+    if (t && !t.contains(e.relatedTarget)) setTip(null);
+  });
+  // Con el dedo: al tocar, unos segundos
+  document.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse') return;
+    const t = e.target.closest('[data-tip]');
+    if (!t) return;
+    clearTimeout(tipTimer);
+    setTip(t.dataset.tip);
+    tipTimer = setTimeout(() => setTip(null), 2500);
+  }, true);
+
+  // Sobre el pentagrama, con ratón: qué pasa si haces clic aquí
+  svg.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse' || press) return;
+    const b = bandAt(e.clientY);
+    if (b === null) return setTip(null);
+    if (onKey(b, e.clientX, e.clientY))
+      return setTip(`${KEYS[LEVELS[level].key].name}: ${KEYS[LEVELS[level].key].says} — clic en la clave para cambiar de tonalidad`);
+    if (onMeter(b, e.clientX, e.clientY))
+      return setTip(`Compás de ${LEVELS[level].meter}/4 — clic para cambiarlo (2/4, 3/4, 4/4)`);
+    const i = noteAt(b, e.clientX);
+    if (i !== null && notes()[i].rest)
+      return setTip('Silencio: clic para cambiarlo, arrástralo a un lado para borrarlo');
+    if (i === null && hasRests(level) && mode === 'rest')
+      return setTip('Clic para poner un silencio — mantén pulsado para silencios más largos');
+    setTip(i === null
+      ? (level !== 1 ? 'Clic para poner una nota — mantén pulsado para notas más largas' : 'Clic para poner una nota aquí')
+      : `${noteName(notes()[i].p, effAcc(notes()[i]))}: clic para cambiarla, arrástrala a un lado para borrarla`);
+  });
+  svg.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') setTip(null); });
+
+  // --- Mis canciones ---
+  const songsEl = document.getElementById('songs');
+  const songNameEl = document.getElementById('songName');
+  const songListEl = document.getElementById('songList');
+  const saveMsgEl = document.getElementById('saveMsg');
+  const readSongs = () => readStore(SONGS_KEY, []);
+
+  function message(text, isError = false) {
+    saveMsgEl.textContent = text;
+    saveMsgEl.classList.toggle('error', isError);
+  }
+
+  function openSongs() {
+    stop();
+    songNameEl.value = LEVELS[level].name || '';
+    message('');
+    listSongs();
+    songsEl.hidden = false;
+  }
+  function closeSongs() { songsEl.hidden = true; }
+
+  function listSongs() {
+    const songs = readSongs().sort((a, b) => b.updated - a.updated);
+    songListEl.innerHTML = '';
+    if (!songs.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'Todavía no hay canciones guardadas';
+      songListEl.appendChild(li);
+      return;
+    }
+    for (const song of songs) {
+      const li = document.createElement('li');
+      const info = document.createElement('div');
+      info.className = 'songInfo';
+      const name = document.createElement('div');
+      name.className = 'songName';
+      name.textContent = song.name;
+      const meta = document.createElement('div');
+      meta.className = 'songMeta';
+      const date = new Date(song.updated).toLocaleDateString('es', { day: 'numeric', month: 'short' });
+      meta.textContent = `Nivel ${song.level} · ${LEVELS[song.level].title}${hasKeys(song.level) ? ` · ${KEYS[validKey(song.key)].name}` : ''}${hasBars(song.level) ? ` · ${validMeter(song.meter)}/4` : ''} · ${song.notes.length} notas · ♩ = ${validTempo(song.tempo)} · ${date}`;
+      info.append(name, meta);
+
+      const open = document.createElement('button');
+      open.textContent = 'Abrir';
+      open.addEventListener('click', () => openSong(song));
+      const exp = document.createElement('button');
+      exp.textContent = 'Exportar';
+      exp.addEventListener('click', () => exportSongs([song], song.name));
+      const del = document.createElement('button');
+      del.textContent = 'Borrar';
+      del.className = 'danger';
+      del.addEventListener('click', () => {
+        if (!confirm(`¿Borrar "${song.name}"?`)) return;
+        writeStore(SONGS_KEY, readSongs().filter(s => s.id !== song.id));
+        listSongs();
+      });
+      li.append(info, open, exp, del);
+      songListEl.appendChild(li);
+    }
+  }
+
+  // Guardar: si ya existe una canción con ese nombre en este nivel, se actualiza
+  function saveSong() {
+    const name = songNameEl.value.trim();
+    if (!name) { songNameEl.focus(); return; }
+    if (!notes().length) { message('No hay notas que guardar', true); return; }
+    const songs = readSongs();
+    const existing = songs.find(s => s.name.toLowerCase() === name.toLowerCase() && s.level === level);
+    const data = { name, level, tempo: LEVELS[level].tempo, notes: pack(notes()), updated: Date.now() };
+    if (hasBars(level)) data.meter = LEVELS[level].meter;
+    if (hasKeys(level)) data.key = LEVELS[level].key;
+    if (existing) Object.assign(existing, data);
+    else songs.push({ id: Date.now().toString(36), ...data });
+    if (!writeStore(SONGS_KEY, songs)) { message('No se pudo guardar en este dispositivo', true); return; }
+    LEVELS[level].name = name;
+    saveCurrent();
+    message(existing ? `"${name}" actualizada ✓` : `"${name}" guardada ✓`);
+    songNameEl.blur();
+    listSongs();
+  }
+
+  function openSong(song) {
+    const L = LEVELS[song.level];
+    L.notes.length = 0;
+    L.notes.push(...unpack(song.notes));
+    L.history.length = 0;
+    L.redo.length = 0;
+    L.name = song.name;
+    L.tempo = validTempo(song.tempo);
+    if (hasBars(song.level)) L.meter = validMeter(song.meter);
+    if (hasKeys(song.level)) L.key = validKey(song.key);
+    saveCurrent();
+    closeSongs();
+    setLevel(song.level);
+    page = 0;
+    scrollX = scrollTarget = 0;
+    render();
+  }
+
+  // --- Exportar e importar (archivo .json para pasar entre tablets) ---
+  const FILE_APP = 'pentagrama';
+
+  async function exportSongs(songs, title) {
+    if (!songs.length) { message('No hay canciones que exportar', true); return; }
+    const data = {
+      app: FILE_APP, version: 1,
+      songs: songs.map(({ name, level, tempo, meter, key, notes }) => ({
+        name, level, tempo: validTempo(tempo), notes,
+        ...(hasBars(level) ? { meter: validMeter(meter) } : {}),
+        ...(hasKeys(level) ? { key: validKey(key) } : {}),
+      })),
+    };
+    const safe = title.replace(/[\\/:*?"<>|]+/g, '').trim() || 'canciones';
+    const fileName = `${safe}.pentagrama.json`;
+    const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+
+    // Con HTTPS el iPad ofrece compartir directo (AirDrop, Mensajes…)
+    const file = new File([blob], fileName, { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title });
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return;          // el usuario canceló
+      }
+    }
+    // Si no, se descarga el archivo (queda en Archivos › Descargas)
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    message(`Exportado: ${fileName}`);
+  }
+
+  // Valida una canción leída de un archivo
+  function cleanSong(x) {
+    if (!x || typeof x.name !== 'string' || !LEVEL_IDS.includes(x.level) || !Array.isArray(x.notes)) return null;
+    const f = n => x.level === 1 ? NOTE_FIG.name : figByName(n.f).name;
+    const notes = x.notes
+      .filter(n => (hasBars(x.level) && n?.r) || (Number.isInteger(n?.p) && n.p >= P_MIN && n.p <= P_MAX))
+      .map(n => n.r && hasBars(x.level) ? { r: 1, f: f(n) }
+        : { p: n.p, f: f(n), ...(hasAccs(x.level) && [1, -1].includes(n.a) || hasKeys(x.level) && n.a === 0 ? { a: n.a } : {}) });
+    const name = x.name.trim().slice(0, 60);
+    if (!name || !notes.length) return null;
+    const song = { name, level: x.level, tempo: validTempo(x.tempo), notes };
+    if (hasBars(x.level)) song.meter = validMeter(x.meter);
+    if (hasKeys(x.level)) song.key = validKey(x.key);
+    return song;
+  }
+
+  async function importFile(file) {
+    let data;
+    try { data = JSON.parse(await file.text()); }
+    catch (_) { message('Ese archivo no es una canción válida', true); return; }
+    const incoming = (data?.app === FILE_APP && Array.isArray(data.songs) ? data.songs : [])
+      .map(cleanSong).filter(Boolean);
+    if (!incoming.length) { message('Ese archivo no contiene canciones', true); return; }
+
+    const songs = readSongs();
+    let added = 0, same = 0;
+    for (const song of incoming) {
+      const sameName = s => s.level === song.level && s.name.toLowerCase() === song.name.toLowerCase();
+      const twin = songs.find(sameName);
+      if (twin && JSON.stringify(twin.notes) === JSON.stringify(song.notes)) {
+        twin.tempo = song.tempo;
+        same++;
+        continue;
+      }
+      // Si ya hay otra con ese nombre, la importada se renombra
+      let name = song.name, k = 2;
+      while (songs.some(s => s.level === song.level && s.name.toLowerCase() === name.toLowerCase()))
+        name = `${song.name} (${k++})`;
+      songs.push({ id: Date.now().toString(36) + added, ...song, name, updated: Date.now() });
+      added++;
+    }
+    if (!writeStore(SONGS_KEY, songs)) { message('No se pudo guardar en este dispositivo', true); return; }
+    const parts = [];
+    if (added) parts.push(added === 1 ? '1 canción importada ✓' : `${added} canciones importadas ✓`);
+    if (same) parts.push(same === 1 ? '1 ya estaba' : `${same} ya estaban`);
+    message(parts.join(' · '));
+    listSongs();
+  }
+
+  const importInput = document.getElementById('importFile');
+  document.getElementById('importBtn').addEventListener('click', () => importInput.click());
+  importInput.addEventListener('change', () => {
+    const file = importInput.files[0];
+    importInput.value = '';
+    if (file) importFile(file);
+  });
+  document.getElementById('exportAll').addEventListener('click', () =>
+    exportSongs(readSongs(), 'Mis canciones'));
+
+  document.getElementById('songsBtn').addEventListener('click', openSongs);
+  document.getElementById('closeSongs').addEventListener('click', closeSongs);
+  document.getElementById('saveSong').addEventListener('click', saveSong);
+  songNameEl.addEventListener('keydown', e => { if (e.key === 'Enter') saveSong(); });
+  songsEl.addEventListener('pointerdown', e => { if (e.target === songsEl) closeSongs(); });
+
+  const pager = document.getElementById('pager');
+  const pageLabel = document.getElementById('pageLabel');
+  const prevBtn = document.getElementById('prev');
+  const nextBtn = document.getElementById('next');
+  // En Hoja cambian de página; en Zoom deslizan el pentagrama
+  function move(dir) {
+    if (view === 'zoom') scrollTarget += dir * viewW() * 0.6;
+    else page += dir;
+    render();
+  }
+  prevBtn.addEventListener('click', () => move(-1));
+  nextBtn.addEventListener('click', () => move(1));
+
+  // Mostrar el final de la melodía
+  function showEnd() {
+    const { pos, lastLine } = flow(notes());
+    page = pageOf(lastLine);
+    scrollX = scrollTarget = view === 'zoom' ? maxScrollFor(pos) : 0;
+    scrollV = 0;
+  }
+
+  const levelBtns = document.querySelectorAll('#levels button');
+  function setLevel(n) {
+    stop();
+    level = n;
+    levelBtns.forEach(b => b.classList.toggle('on', +b.dataset.level === n));
+    // En el nivel 7 lo normal es seguir la armadura; fuera de él esa opción no existe
+    if (hasKeys(n) && accSel === 0) setAcc('key');
+    if (!hasKeys(n) && accSel === 'key') setAcc(0);
+    showTempo();
+    relayout();
+  }
+  levelBtns.forEach(b => b.addEventListener('click', () => setLevel(+b.dataset.level)));
+
+  const viewBtns = document.querySelectorAll('#views button');
+  function setView(v) {
+    view = v;
+    document.body.classList.toggle('zoom', v === 'zoom');
+    viewBtns.forEach(b => b.classList.toggle('on', b.dataset.view === v));
+    relayout();
+  }
+  viewBtns.forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+
+  // Borde derecho real de la clave de sol (depende de la fuente del dispositivo)
+  // Borde derecho de la clave de sol
+  function measureClef() {
+    return G.left + G.gap * 0.3 + CLEF.width * G.gap / CLEF.unitsPerGap;
+  }
+
+  function relayout() {
+    G = computeGeometry();
+    G.clefRight = measureClef();
+    // Desde el nivel 3: el compás va justo después de la clave
+    // Clave, después armadura (nivel 7) y después compás
+    G.keyX = G.clefRight + G.gap * 0.2;
+    const sigs = hasKeys(level) ? KEYS[LEVELS[level].key].sig.length : 0;
+    G.tsX = G.keyX + (sigs ? sigs * G.gap * 0.85 + G.gap * 0.3 : 0);
+    G.headerRight = hasBars(level) ? G.tsX + G.gap * 1.6 : G.clefRight;
+    // En Zoom las notas empiezan justo después de la cabecera
+    if (view === 'zoom') G.firstX = G.headerRight + G.gap * 0.8;
+    else G.firstX = Math.max(G.firstX, G.headerRight + G.gap * 0.8);
+    showEnd();
+    render();
+  }
+  level = 1;
+  levelBtns.forEach(b => b.classList.toggle('on', +b.dataset.level === 1));
+  setMode('note');
+  setAcc(0);
+  setDot(false);
+  setSix(false);
+  setView('sheet');
+  showTempo();
+  // Al abrir, mostrar la melodía desde el principio
+  page = 0;
+  scrollX = scrollTarget = 0;
+  render();
+  window.addEventListener('resize', relayout);
+
+  // Funcionar sin conexión (solo en HTTPS o en localhost)
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>

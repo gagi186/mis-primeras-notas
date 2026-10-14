@@ -1,0 +1,5 @@
+# Solo para uso local
+.claude/
+qr-ipad.png
+.DS_Store
+server.py
